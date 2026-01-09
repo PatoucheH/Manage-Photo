@@ -1,442 +1,181 @@
 #!/usr/bin/env python3
 """
-Photo Manager - Application de gestion de photos pour générer des documents Word
-Compatible Windows et macOS (fonctionne avec Tcl/Tk 8.5+)
-Ultra-optimisé pour traiter des milliers de photos
+Photo Manager - Application de gestion de photos pour generer des documents Word
+Compatible Windows et macOS (PyQt5)
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
-import os
 import sys
-from typing import List, Optional, Callable
-
-# Compatibilite Pillow < 9.1.0
-try:
-    LANCZOS = Image.Resampling.LANCZOS
-except AttributeError:
-    LANCZOS = Image.LANCZOS
+import os
+import math
+import io
+from typing import List, Optional
 from dataclasses import dataclass, field
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QRadioButton, QButtonGroup, QScrollArea,
+    QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame,
+    QSizePolicy
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QPixmap, QImage, QFont
+
+from PIL import Image
 from docx import Document
 from docx.shared import Mm
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-import io
-import math
-import threading
 
-SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png')
+SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG')
 THUMB_SIZE = (100, 100)
 PHOTOS_PER_VIEW = 50
 
 
 @dataclass
 class PhotoItem:
-    """Photo avec métadonnées"""
+    """Photo avec metadonnees"""
     path: str
     rotation: int = 0
-    _thumb: Optional[ImageTk.PhotoImage] = field(default=None, repr=False)
-    _pil_img: Optional[Image.Image] = field(default=None, repr=False)
+    _pixmap: Optional[QPixmap] = field(default=None, repr=False)
 
     def rotate(self):
         self.rotation = (self.rotation + 90) % 360
-        self._thumb = None
-        self._pil_img = None
+        self._pixmap = None
 
-    def get_thumb(self) -> Optional[ImageTk.PhotoImage]:
-        if self._thumb:
-            return self._thumb
+    def get_pixmap(self) -> Optional[QPixmap]:
+        if self._pixmap:
+            return self._pixmap
         try:
             with Image.open(self.path) as img:
                 if self.rotation:
                     img = img.rotate(-self.rotation, expand=True)
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
-                img.thumbnail(THUMB_SIZE, LANCZOS)
-                self._pil_img = img.copy()
-                self._thumb = ImageTk.PhotoImage(self._pil_img)
-                return self._thumb
-        except:
+                img.thumbnail(THUMB_SIZE, Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+
+                # Convert PIL to QPixmap
+                data = img.tobytes("raw", "RGB")
+                qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format_RGB888)
+                self._pixmap = QPixmap.fromImage(qimg)
+                return self._pixmap
+        except Exception as e:
+            print(f"Error loading {self.path}: {e}")
             return None
 
     def clear(self):
-        self._thumb = None
-        self._pil_img = None
+        self._pixmap = None
 
 
-class PhotoCard(ttk.Frame):
+class PhotoCard(QFrame):
     """Carte photo compacte"""
 
-    def __init__(self, master, photo: PhotoItem, index: int, on_delete: Callable, **kw):
-        super().__init__(master, **kw)
-
+    def __init__(self, photo: PhotoItem, index: int, on_delete, on_rotate):
+        super().__init__()
         self.photo = photo
         self.index = index
         self.on_delete = on_delete
+        self.on_rotate = on_rotate
 
-        # Container avec bordure
-        self.configure(relief="solid", borderwidth=1)
+        self.setFrameStyle(QFrame.Box | QFrame.Raised)
+        self.setFixedSize(130, 160)
 
-        # Image
-        self.img_label = ttk.Label(self, text="...", width=12)
-        self.img_label.pack(pady=(5, 2))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
 
-        # Boutons
-        bf = ttk.Frame(self)
-        bf.pack()
+        # Image label
+        self.img_label = QLabel()
+        self.img_label.setFixedSize(100, 100)
+        self.img_label.setAlignment(Qt.AlignCenter)
+        self.img_label.setStyleSheet("background-color: #f0f0f0;")
+        layout.addWidget(self.img_label, alignment=Qt.AlignCenter)
 
-        rotate_btn = ttk.Button(bf, text="↻", width=3, command=self._rotate)
-        rotate_btn.pack(side="left", padx=1)
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(2)
 
-        delete_btn = ttk.Button(bf, text="✕", width=3, command=self._delete)
-        delete_btn.pack(side="left", padx=1)
+        rotate_btn = QPushButton("↻")
+        rotate_btn.setFixedSize(30, 25)
+        rotate_btn.clicked.connect(self._rotate)
+        btn_layout.addWidget(rotate_btn)
 
-        # Nom
+        delete_btn = QPushButton("✕")
+        delete_btn.setFixedSize(30, 25)
+        delete_btn.setStyleSheet("background-color: #e74c3c; color: white;")
+        delete_btn.clicked.connect(self._delete)
+        btn_layout.addWidget(delete_btn)
+
+        layout.addLayout(btn_layout)
+
+        # Filename
         name = os.path.basename(photo.path)
-        display_name = name[:16] + "..." if len(name) > 16 else name
-        ttk.Label(self, text=display_name, font=("Arial", 8)).pack()
+        display_name = name[:14] + "..." if len(name) > 14 else name
+        name_label = QLabel(display_name)
+        name_label.setFont(QFont("Arial", 8))
+        name_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(name_label)
 
-        # Charger image après
-        self.after(10, self._load)
+        # Load image
+        self._load_image()
 
-    def _load(self):
-        thumb = self.photo.get_thumb()
-        if thumb:
-            self.img_label.configure(image=thumb, text="")
-            self.img_label.image = thumb  # Keep reference
+    def _load_image(self):
+        pixmap = self.photo.get_pixmap()
+        if pixmap:
+            scaled = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.img_label.setPixmap(scaled)
         else:
-            self.img_label.configure(text="Err")
+            self.img_label.setText("Err")
 
     def _rotate(self):
         self.photo.rotate()
-        self._load()
+        self._load_image()
+        self.on_rotate(self.index)
 
     def _delete(self):
         self.on_delete(self.index)
 
 
-class ScrollableFrame(ttk.Frame):
-    """Frame scrollable compatible Tk 8.5+"""
+class ExportThread(QThread):
+    """Thread pour l'export Word"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
 
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
-
-        # Canvas avec scrollbar
-        self.canvas = tk.Canvas(self, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
-
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-
-        self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-
-        # Bind mouse wheel
-        self.canvas.bind("<Enter>", self._bind_mousewheel)
-        self.canvas.bind("<Leave>", self._unbind_mousewheel)
-
-        # Resize handling
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-
-    def _on_canvas_configure(self, event):
-        self.canvas.itemconfig(self.canvas_frame, width=event.width)
-
-    def _bind_mousewheel(self, event):
-        if sys.platform == 'darwin':
-            self.canvas.bind_all("<MouseWheel>", self._on_mousewheel_mac)
-        else:
-            self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-            self.canvas.bind_all("<Button-4>", self._on_mousewheel_linux)
-            self.canvas.bind_all("<Button-5>", self._on_mousewheel_linux)
-
-    def _unbind_mousewheel(self, event):
-        self.canvas.unbind_all("<MouseWheel>")
-        if sys.platform != 'darwin':
-            self.canvas.unbind_all("<Button-4>")
-            self.canvas.unbind_all("<Button-5>")
-
-    def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    def _on_mousewheel_mac(self, event):
-        self.canvas.yview_scroll(int(-1 * event.delta), "units")
-
-    def _on_mousewheel_linux(self, event):
-        if event.num == 4:
-            self.canvas.yview_scroll(-1, "units")
-        elif event.num == 5:
-            self.canvas.yview_scroll(1, "units")
-
-
-class PhotoManagerApp(tk.Tk):
-    """Application principale compatible Tk 8.5+"""
-
-    def __init__(self):
+    def __init__(self, photos, path, ppp):
         super().__init__()
-        self.title("Photo Manager")
-        self.geometry("1200x800")
-        self.minsize(900, 600)
+        self.photos = photos
+        self.path = path
+        self.ppp = ppp
 
-        # Style
-        self._setup_style()
+    def run(self):
+        try:
+            self._generate_word()
+            self.finished.emit(self.path)
+        except Exception as e:
+            self.error.emit(str(e))
 
-        self.photos: List[PhotoItem] = []
-        self.current_page = 0
-        self._cards: List[PhotoCard] = []
-
-        self._build_ui()
-
-    def _setup_style(self):
-        """Configure ttk style"""
-        style = ttk.Style()
-
-        # Use native theme
-        if sys.platform == 'darwin':
-            style.theme_use('aqua')
-        elif sys.platform == 'win32':
-            style.theme_use('vista')
-        else:
-            style.theme_use('clam')
-
-        # Custom button styles
-        style.configure("Green.TButton", background="#27ae60")
-        style.configure("Red.TButton", background="#e74c3c")
-
-    def _build_ui(self):
-        # Main container
-        main_frame = ttk.Frame(self)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Panneau gauche
-        left = ttk.Frame(main_frame, width=240)
-        left.pack(side="left", fill="y", padx=(0, 10))
-        left.pack_propagate(False)
-
-        ttk.Label(left, text="Photo Manager", font=("Arial", 18, "bold")).pack(pady=(15, 3))
-        ttk.Label(left, text="Export Word", font=("Arial", 10)).pack(pady=(0, 15))
-
-        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=5)
-
-        ttk.Label(left, text="Ajouter", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10, 5))
-        ttk.Button(left, text="+ Dossier", command=self._add_folder).pack(fill="x", padx=15, pady=2)
-        ttk.Button(left, text="+ Fichiers", command=self._add_files).pack(fill="x", padx=15, pady=2)
-
-        self.count_lbl = ttk.Label(left, text="0 photos", font=("Arial", 10, "bold"))
-        self.count_lbl.pack(pady=8)
-
-        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=5)
-
-        ttk.Label(left, text="Photos/page", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10, 5))
-        self.ppp = tk.StringVar(value="6")
-        for v, t in [("4", "4 (2x2)"), ("6", "6 (2x3)"), ("9", "9 (3x3)")]:
-            ttk.Radiobutton(left, text=t, variable=self.ppp, value=v).pack(anchor="w", padx=25, pady=1)
-
-        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=10)
-
-        export_btn = ttk.Button(left, text="EXPORTER WORD", command=self._export)
-        export_btn.pack(fill="x", padx=15, pady=5)
-
-        clear_btn = ttk.Button(left, text="Tout effacer", command=self._clear)
-        clear_btn.pack(fill="x", padx=15, pady=5)
-
-        # Spacer
-        ttk.Frame(left).pack(fill="both", expand=True)
-        ttk.Label(left, text="JPG, PNG", font=("Arial", 9), foreground="gray").pack(pady=5)
-
-        # Panneau droit
-        right = ttk.Frame(main_frame)
-        right.pack(side="left", fill="both", expand=True)
-
-        # Header avec navigation
-        header = ttk.Frame(right)
-        header.pack(fill="x", pady=(0, 5))
-
-        ttk.Label(header, text="Aperçu", font=("Arial", 13, "bold")).pack(side="left")
-
-        # Navigation
-        nav = ttk.Frame(header)
-        nav.pack(side="right")
-
-        self.prev_btn = ttk.Button(nav, text="<", width=3, command=self._prev_page)
-        self.prev_btn.pack(side="left", padx=2)
-
-        self.page_lbl = ttk.Label(nav, text="0/0", width=10, anchor="center")
-        self.page_lbl.pack(side="left", padx=5)
-
-        self.next_btn = ttk.Button(nav, text=">", width=3, command=self._next_page)
-        self.next_btn.pack(side="left", padx=2)
-
-        # Zone photos scrollable
-        self.scroll = ScrollableFrame(right)
-        self.scroll.pack(fill="both", expand=True)
-
-        # Grid container
-        self.grid_frame = self.scroll.scrollable_frame
-
-    def _add_folder(self):
-        folder = filedialog.askdirectory(title="Dossier")
-        if folder:
-            files = sorted([os.path.join(folder, f) for f in os.listdir(folder)
-                          if f.lower().endswith(SUPPORTED_FORMATS)])
-            if files:
-                self._add_photos(files)
-
-    def _add_files(self):
-        files = filedialog.askopenfilenames(title="Photos",
-            filetypes=[("Images", "*.jpg *.jpeg *.png")])
-        if files:
-            self._add_photos(list(files))
-
-    def _add_photos(self, files: List[str]):
-        existing = {p.path for p in self.photos}
-        new = [PhotoItem(f) for f in files if f not in existing]
-        self.photos.extend(new)
-        self._update()
-
-    def _delete_photo(self, index: int):
-        if 0 <= index < len(self.photos):
-            self.photos[index].clear()
-            del self.photos[index]
-            max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
-            if self.current_page > max_page:
-                self.current_page = max_page
-            self._update()
-
-    def _clear(self):
-        for p in self.photos:
-            p.clear()
-        self.photos.clear()
-        self.current_page = 0
-        self._update()
-
-    def _prev_page(self):
-        if self.current_page > 0:
-            self.current_page -= 1
-            self._refresh_grid()
-
-    def _next_page(self):
-        max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
-        if self.current_page < max_page:
-            self.current_page += 1
-            self._refresh_grid()
-
-    def _update(self):
-        self.count_lbl.configure(text=f"{len(self.photos)} photos")
-        self._refresh_grid()
-
-    def _refresh_grid(self):
-        # Détruire anciennes cartes
-        for c in self._cards:
-            c.destroy()
-        self._cards.clear()
-
-        if not self.photos:
-            self.page_lbl.configure(text="0/0")
-            return
-
-        # Pagination
-        total_pages = math.ceil(len(self.photos) / PHOTOS_PER_VIEW)
-        self.page_lbl.configure(text=f"{self.current_page + 1}/{total_pages}")
-
-        # Photos de cette page
-        start = self.current_page * PHOTOS_PER_VIEW
-        end = min(start + PHOTOS_PER_VIEW, len(self.photos))
-
-        # Colonnes
-        cols = 6
-
-        for i, idx in enumerate(range(start, end)):
-            card = PhotoCard(self.grid_frame, self.photos[idx], idx, self._delete_photo)
-            card.grid(row=i // cols, column=i % cols, padx=3, pady=3, sticky="nsew")
-            self._cards.append(card)
-
-    def _export(self):
-        if not self.photos:
-            messagebox.showwarning("Attention", "Aucune photo.")
-            return
-
-        path = filedialog.asksaveasfilename(
-            title="Enregistrer",
-            defaultextension=".docx",
-            filetypes=[("Word", "*.docx")],
-            initialfile="photos.docx"
-        )
-        if not path:
-            return
-
-        # Progress window
-        prog = tk.Toplevel(self)
-        prog.title("Export...")
-        prog.geometry("350x120")
-        prog.transient(self)
-        prog.grab_set()
-
-        ttk.Label(prog, text="Génération du document Word...", font=("Arial", 12)).pack(pady=15)
-
-        bar = ttk.Progressbar(prog, length=300, mode='determinate')
-        bar.pack(pady=10)
-
-        status = ttk.Label(prog, text="0%", font=("Arial", 10))
-        status.pack()
-
-        def update_progress(p):
-            bar['value'] = p * 100
-            status.configure(text=f"{int(p * 100)}%")
-            prog.update_idletasks()
-
-        def gen():
-            try:
-                self._generate_word(path, lambda p: self.after(0, lambda: update_progress(p)))
-                self.after(0, lambda: self._done(prog, path, None))
-            except Exception as e:
-                self.after(0, lambda: self._done(prog, path, str(e)))
-
-        threading.Thread(target=gen, daemon=True).start()
-
-    def _done(self, prog, path, err):
-        prog.destroy()
-        if err:
-            messagebox.showerror("Erreur", err)
-        else:
-            messagebox.showinfo("Succès", f"Exporté:\n{path}")
-
-    def _generate_word(self, path: str, progress: Callable = None):
-        """Génère Word avec images MAXIMUM"""
+    def _generate_word(self):
         doc = Document()
 
-        # Marges minimales (5mm)
         for section in doc.sections:
             section.top_margin = Mm(5)
             section.bottom_margin = Mm(5)
             section.left_margin = Mm(5)
             section.right_margin = Mm(5)
 
-        ppp = int(self.ppp.get())
-        cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[ppp]
+        cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[self.ppp]
 
-        # Dimensions page A4 - marges (en mm)
         page_w_mm = 210 - 10
         page_h_mm = 297 - 10
-
-        # Espacement minimal entre images (2mm)
         gap = 2
 
-        # Taille max par cellule
         cell_w = (page_w_mm - gap * (cols - 1)) / cols
         cell_h = (page_h_mm - gap * (rows - 1)) / rows
 
         total = len(self.photos)
-        num_pages = math.ceil(total / ppp)
+        num_pages = math.ceil(total / self.ppp)
 
         for page_idx in range(num_pages):
             if page_idx > 0:
@@ -445,11 +184,9 @@ class PhotoManagerApp(tk.Tk):
             table = doc.add_table(rows=rows, cols=cols)
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-            # Supprimer les bordures et marges de table
             tbl = table._tbl
             tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
 
-            # Marges cellules à 0
             tblCellMar = OxmlElement('w:tblCellMar')
             for side in ['top', 'left', 'bottom', 'right']:
                 node = OxmlElement(f'w:{side}')
@@ -458,7 +195,7 @@ class PhotoManagerApp(tk.Tk):
                 tblCellMar.append(node)
             tblPr.append(tblCellMar)
 
-            start = page_idx * ppp
+            start = page_idx * self.ppp
 
             for i in range(rows):
                 for j in range(cols):
@@ -470,8 +207,6 @@ class PhotoManagerApp(tk.Tk):
                     cell = table.cell(i, j)
                     para = cell.paragraphs[0]
                     para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-                    # Marges paragraphe à 0
                     para.paragraph_format.space_before = Mm(0)
                     para.paragraph_format.space_after = Mm(0)
 
@@ -497,11 +232,9 @@ class PhotoManagerApp(tk.Tk):
                             img.save(buf, format='JPEG', quality=90)
                             buf.seek(0)
 
-                            # Calculer taille pour remplir la cellule
                             w, h = img.size
                             ratio = w / h
 
-                            # Adapter à la cellule en gardant ratio
                             if ratio > (cell_w / cell_h):
                                 final_w = cell_w
                                 final_h = cell_w / ratio
@@ -514,15 +247,286 @@ class PhotoManagerApp(tk.Tk):
                     except Exception:
                         para.add_run("[Err]")
 
-                    if progress:
-                        progress((idx + 1) / total)
+                    self.progress.emit(int((idx + 1) / total * 100))
 
-        doc.save(path)
+        doc.save(self.path)
+
+
+class PhotoManagerApp(QMainWindow):
+    """Application principale PyQt5"""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Photo Manager")
+        self.setMinimumSize(900, 600)
+        self.resize(1200, 800)
+
+        self.photos: List[PhotoItem] = []
+        self.current_page = 0
+        self._cards: List[PhotoCard] = []
+
+        self._build_ui()
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+
+        # Left panel
+        left_panel = QFrame()
+        left_panel.setFixedWidth(240)
+        left_panel.setFrameStyle(QFrame.StyledPanel)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setSpacing(5)
+
+        # Title
+        title = QLabel("Photo Manager")
+        title.setFont(QFont("Arial", 18, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(title)
+
+        subtitle = QLabel("Export Word")
+        subtitle.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(subtitle)
+
+        left_layout.addSpacing(15)
+
+        # Add section
+        add_label = QLabel("Ajouter")
+        add_label.setFont(QFont("Arial", 11, QFont.Bold))
+        left_layout.addWidget(add_label)
+
+        folder_btn = QPushButton("+ Dossier")
+        folder_btn.clicked.connect(self._add_folder)
+        left_layout.addWidget(folder_btn)
+
+        files_btn = QPushButton("+ Fichiers")
+        files_btn.clicked.connect(self._add_files)
+        left_layout.addWidget(files_btn)
+
+        self.count_label = QLabel("0 photos")
+        self.count_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.count_label.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(self.count_label)
+
+        left_layout.addSpacing(10)
+
+        # Photos per page
+        ppp_label = QLabel("Photos/page")
+        ppp_label.setFont(QFont("Arial", 11, QFont.Bold))
+        left_layout.addWidget(ppp_label)
+
+        self.ppp_group = QButtonGroup(self)
+        for val, text in [(4, "4 (2x2)"), (6, "6 (2x3)"), (9, "9 (3x3)")]:
+            radio = QRadioButton(text)
+            radio.setProperty("ppp", val)
+            self.ppp_group.addButton(radio, val)
+            left_layout.addWidget(radio)
+            if val == 6:
+                radio.setChecked(True)
+
+        left_layout.addSpacing(15)
+
+        # Export button
+        export_btn = QPushButton("EXPORTER WORD")
+        export_btn.setFont(QFont("Arial", 12, QFont.Bold))
+        export_btn.setStyleSheet("background-color: #27ae60; color: white; padding: 10px;")
+        export_btn.clicked.connect(self._export)
+        left_layout.addWidget(export_btn)
+
+        clear_btn = QPushButton("Tout effacer")
+        clear_btn.setStyleSheet("background-color: #e74c3c; color: white;")
+        clear_btn.clicked.connect(self._clear)
+        left_layout.addWidget(clear_btn)
+
+        left_layout.addStretch()
+
+        formats_label = QLabel("JPG, PNG")
+        formats_label.setStyleSheet("color: gray;")
+        formats_label.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(formats_label)
+
+        main_layout.addWidget(left_panel)
+
+        # Right panel
+        right_panel = QFrame()
+        right_panel.setFrameStyle(QFrame.StyledPanel)
+        right_layout = QVBoxLayout(right_panel)
+
+        # Header with navigation
+        header = QHBoxLayout()
+
+        preview_label = QLabel("Apercu")
+        preview_label.setFont(QFont("Arial", 13, QFont.Bold))
+        header.addWidget(preview_label)
+
+        header.addStretch()
+
+        self.prev_btn = QPushButton("<")
+        self.prev_btn.setFixedWidth(30)
+        self.prev_btn.clicked.connect(self._prev_page)
+        header.addWidget(self.prev_btn)
+
+        self.page_label = QLabel("0/0")
+        self.page_label.setFixedWidth(60)
+        self.page_label.setAlignment(Qt.AlignCenter)
+        header.addWidget(self.page_label)
+
+        self.next_btn = QPushButton(">")
+        self.next_btn.setFixedWidth(30)
+        self.next_btn.clicked.connect(self._next_page)
+        header.addWidget(self.next_btn)
+
+        right_layout.addLayout(header)
+
+        # Scroll area for photos
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("background-color: #f5f5f5;")
+
+        self.grid_widget = QWidget()
+        self.grid_layout = QGridLayout(self.grid_widget)
+        self.grid_layout.setSpacing(5)
+        self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+
+        self.scroll_area.setWidget(self.grid_widget)
+        right_layout.addWidget(self.scroll_area)
+
+        main_layout.addWidget(right_panel, 1)
+
+    def _add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Dossier")
+        if folder:
+            files = sorted([
+                os.path.join(folder, f) for f in os.listdir(folder)
+                if f.lower().endswith(SUPPORTED_FORMATS)
+            ])
+            if files:
+                self._add_photos(files)
+
+    def _add_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Photos", "",
+            "Images (*.jpg *.jpeg *.png *.JPG *.JPEG *.PNG)"
+        )
+        if files:
+            self._add_photos(files)
+
+    def _add_photos(self, files: List[str]):
+        existing = {p.path for p in self.photos}
+        new_photos = [PhotoItem(f) for f in files if f not in existing]
+        self.photos.extend(new_photos)
+        self._update()
+
+    def _delete_photo(self, index: int):
+        if 0 <= index < len(self.photos):
+            self.photos[index].clear()
+            del self.photos[index]
+            max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
+            if self.current_page > max_page:
+                self.current_page = max_page
+            self._update()
+
+    def _rotate_photo(self, index: int):
+        pass  # Rotation already handled in PhotoCard
+
+    def _clear(self):
+        for p in self.photos:
+            p.clear()
+        self.photos.clear()
+        self.current_page = 0
+        self._update()
+
+    def _prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._refresh_grid()
+
+    def _next_page(self):
+        max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
+        if self.current_page < max_page:
+            self.current_page += 1
+            self._refresh_grid()
+
+    def _update(self):
+        self.count_label.setText(f"{len(self.photos)} photos")
+        self._refresh_grid()
+
+    def _refresh_grid(self):
+        # Clear existing cards
+        for card in self._cards:
+            card.deleteLater()
+        self._cards.clear()
+
+        # Clear layout
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self.photos:
+            self.page_label.setText("0/0")
+            return
+
+        total_pages = math.ceil(len(self.photos) / PHOTOS_PER_VIEW)
+        self.page_label.setText(f"{self.current_page + 1}/{total_pages}")
+
+        start = self.current_page * PHOTOS_PER_VIEW
+        end = min(start + PHOTOS_PER_VIEW, len(self.photos))
+
+        cols = 6
+
+        for i, idx in enumerate(range(start, end)):
+            card = PhotoCard(
+                self.photos[idx], idx,
+                self._delete_photo, self._rotate_photo
+            )
+            self.grid_layout.addWidget(card, i // cols, i % cols)
+            self._cards.append(card)
+
+    def _export(self):
+        if not self.photos:
+            QMessageBox.warning(self, "Attention", "Aucune photo.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Enregistrer", "photos.docx",
+            "Word (*.docx)"
+        )
+        if not path:
+            return
+
+        ppp = self.ppp_group.checkedId()
+
+        progress = QProgressDialog("Generation du document Word...", None, 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(True)
+        progress.show()
+
+        self.export_thread = ExportThread(self.photos, path, ppp)
+        self.export_thread.progress.connect(progress.setValue)
+        self.export_thread.finished.connect(lambda p: self._export_done(p, progress))
+        self.export_thread.error.connect(lambda e: self._export_error(e, progress))
+        self.export_thread.start()
+
+    def _export_done(self, path, progress):
+        progress.close()
+        QMessageBox.information(self, "Succes", f"Exporte:\n{path}")
+
+    def _export_error(self, error, progress):
+        progress.close()
+        QMessageBox.critical(self, "Erreur", error)
 
 
 def main():
-    app = PhotoManagerApp()
-    app.mainloop()
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    window = PhotoManagerApp()
+    window.show()
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

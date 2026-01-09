@@ -3,7 +3,7 @@
 echo ""
 echo "========================================"
 echo "  Photo Manager - Build macOS"
-echo "  (Compatible Tk 8.5+)"
+echo "  (PyQt5)"
 echo "========================================"
 echo ""
 
@@ -26,7 +26,7 @@ source build_env/bin/activate
 echo ""
 echo "[2/4] Installation des dependances..."
 pip install --upgrade pip > /dev/null 2>&1
-pip install pyinstaller python-docx Pillow
+pip install pyinstaller PyQt5 python-docx Pillow
 
 echo ""
 echo "[3/4] Generation de l application macOS..."
@@ -35,7 +35,10 @@ echo ""
 
 pyinstaller --noconfirm --onefile --windowed \
     --name "PhotoManager" \
-    --hidden-import "PIL._tkinter_finder" \
+    --hidden-import "PyQt5" \
+    --hidden-import "PyQt5.QtWidgets" \
+    --hidden-import "PyQt5.QtCore" \
+    --hidden-import "PyQt5.QtGui" \
     --hidden-import "docx" \
     --hidden-import "docx.parts.image" \
     --hidden-import "lxml.etree" \
