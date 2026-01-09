@@ -11,6 +11,12 @@ from PIL import Image, ImageTk
 import os
 import sys
 from typing import List, Optional, Callable
+
+# Compatibilite Pillow < 9.1.0
+try:
+    LANCZOS = Image.Resampling.LANCZOS
+except AttributeError:
+    LANCZOS = Image.LANCZOS
 from dataclasses import dataclass, field
 from docx import Document
 from docx.shared import Mm
@@ -49,7 +55,7 @@ class PhotoItem:
                     img = img.rotate(-self.rotation, expand=True)
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
-                img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
+                img.thumbnail(THUMB_SIZE, LANCZOS)
                 self._pil_img = img.copy()
                 self._thumb = ImageTk.PhotoImage(self._pil_img)
                 return self._thumb

@@ -7,29 +7,29 @@ echo "  (Compatible Tk 8.5+)"
 echo "========================================"
 echo ""
 
-# Se placer dans le répertoire du script
+# Se placer dans le repertoire du script
 cd "$(dirname "$0")"
 
-# Vérifier Python
+# Verifier Python
 if ! command -v python3 &> /dev/null; then
-    echo "[ERREUR] Python 3 n'est pas installé."
+    echo "[ERREUR] Python 3 n est pas installe."
     echo "         Installez Python via: brew install python"
     exit 1
 fi
 
-echo "[1/4] Création de l'environnement virtuel..."
+echo "[1/4] Creation de l environnement virtuel..."
 if [ ! -d "build_env" ]; then
     python3 -m venv build_env
 fi
 source build_env/bin/activate
 
 echo ""
-echo "[2/4] Installation des dépendances..."
+echo "[2/4] Installation des dependances..."
 pip install --upgrade pip > /dev/null 2>&1
 pip install pyinstaller python-docx Pillow
 
 echo ""
-echo "[3/4] Génération de l'application macOS..."
+echo "[3/4] Generation de l application macOS..."
 echo "      Cela peut prendre quelques minutes..."
 echo ""
 
@@ -45,24 +45,24 @@ pyinstaller --noconfirm --onefile --windowed \
 
 echo ""
 
-# Créer le bundle .app manuellement si nécessaire
+# Creer le bundle .app manuellement si necessaire
 if [ -f "dist/PhotoManager" ]; then
-    echo "[3.5/4] Création du bundle .app..."
+    echo "[3.5/4] Creation du bundle .app..."
 
     APP_DIR="dist/PhotoManager.app"
     CONTENTS_DIR="${APP_DIR}/Contents"
     MACOS_DIR="${CONTENTS_DIR}/MacOS"
     RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
-    # Créer la structure
+    # Creer la structure
     mkdir -p "${MACOS_DIR}"
     mkdir -p "${RESOURCES_DIR}"
 
-    # Copier l'exécutable
+    # Copier l executable
     cp "dist/PhotoManager" "${MACOS_DIR}/PhotoManager"
     chmod +x "${MACOS_DIR}/PhotoManager"
 
-    # Créer Info.plist
+    # Creer Info.plist
     cat > "${CONTENTS_DIR}/Info.plist" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -99,7 +99,7 @@ if [ -d "dist/PhotoManager.app" ]; then
     echo "         BUILD REUSSI !"
     echo "========================================"
     echo ""
-    echo "[4/4] Application créée avec succès !"
+    echo "[4/4] Application creee avec succes !"
     echo ""
     echo "      Application: dist/PhotoManager.app"
     echo ""
@@ -109,19 +109,19 @@ if [ -d "dist/PhotoManager.app" ]; then
 
     # Copier dans le dossier principal
     cp -R "dist/PhotoManager.app" "PhotoManager.app" 2>/dev/null
-    echo "      Une copie a été placée dans le dossier actuel."
+    echo "      Une copie a ete placee dans le dossier actuel."
 elif [ -f "dist/PhotoManager" ]; then
     echo ""
     echo "========================================"
     echo "         BUILD REUSSI !"
     echo "========================================"
     echo ""
-    echo "[4/4] Exécutable créé: dist/PhotoManager"
+    echo "[4/4] Executable cree: dist/PhotoManager"
     echo ""
-    echo "      Double-cliquez dessus pour lancer l'application."
+    echo "      Double-cliquez dessus pour lancer l application."
 else
-    echo "[ERREUR] La génération a échoué."
-    echo "         Vérifiez les messages d'erreur ci-dessus."
+    echo "[ERREUR] La generation a echoue."
+    echo "         Verifiez les messages d erreur ci-dessus."
     exit 1
 fi
 

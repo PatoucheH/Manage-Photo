@@ -1,30 +1,30 @@
 #!/bin/bash
 
 echo "================================"
-echo "  Photo Manager - Démarrage"
+echo "  Photo Manager - Demarrage"
 echo "================================"
 echo
 
-# Vérifier si Python est installé
+# Verifier si Python est installe
 if ! command -v python3 &> /dev/null; then
-    echo "ERREUR: Python 3 n'est pas installé."
+    echo "ERREUR: Python 3 n est pas installe."
     echo "Installez Python via: brew install python"
     exit 1
 fi
 
-# Se placer dans le répertoire du script
+# Se placer dans le repertoire du script
 cd "$(dirname "$0")"
 
-# Vérifier si l'environnement virtuel existe
+# Supprimer ancien venv si besoin
 if [ -d "venv" ]; then
-    echo "Activation de l'environnement virtuel..."
+    echo "Activation de l environnement virtuel..."
     source venv/bin/activate
 else
-    echo "Création de l'environnement virtuel..."
+    echo "Creation de l environnement virtuel..."
     python3 -m venv venv
     source venv/bin/activate
 
-    echo "Installation des dépendances..."
+    echo "Installation des dependances..."
     pip install -r requirements.txt
 fi
 
