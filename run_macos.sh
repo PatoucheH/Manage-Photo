@@ -32,4 +32,8 @@ echo
 echo "Lancement de Photo Manager..."
 echo
 
-python photo_manager.py
+# Suppress Tk deprecation warning and improve rendering
+export TK_SILENCE_DEPRECATION=1
+
+# Run with explicit python path to ensure correct Tk is used
+python3 photo_manager.py

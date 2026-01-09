@@ -9,6 +9,7 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image
 import os
+import sys
 from typing import List, Tuple, Optional, Callable
 from dataclasses import dataclass, field
 from docx import Document
@@ -119,6 +120,23 @@ class PhotoManagerApp(ctk.CTk):
         self._cards: List[PhotoCard] = []
 
         self._build_ui()
+
+        # Fix macOS black screen issue with deprecated Tk
+        if sys.platform == 'darwin':
+            self.update()
+            self.update_idletasks()
+            self.lift()
+            self.focus_force()
+            # Force window to refresh by toggling visibility
+            self.after(100, self._macos_refresh)
+
+    def _macos_refresh(self):
+        """Force refresh on macOS to fix black screen with deprecated Tk"""
+        self.withdraw()
+        self.update()
+        self.deiconify()
+        self.update()
+        self.lift()
 
     def _build_ui(self):
         self.grid_columnconfigure(1, weight=1)
