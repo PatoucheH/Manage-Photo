@@ -1,9 +1,10 @@
 #!/bin/bash
 
 echo ""
-echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║     Photo Manager - Build macOS Application               ║"
-echo "╚═══════════════════════════════════════════════════════════╝"
+echo "========================================"
+echo "  Photo Manager - Build macOS"
+echo "  (Compatible Tk 8.5+)"
+echo "========================================"
 echo ""
 
 # Se placer dans le répertoire du script
@@ -25,10 +26,7 @@ source build_env/bin/activate
 echo ""
 echo "[2/4] Installation des dépendances..."
 pip install --upgrade pip > /dev/null 2>&1
-pip install pyinstaller customtkinter python-docx Pillow
-
-# Trouver le chemin de customtkinter
-CUSTOMTKINTER_PATH=$(python3 -c "import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))")
+pip install pyinstaller python-docx Pillow
 
 echo ""
 echo "[3/4] Génération de l'application macOS..."
@@ -37,9 +35,7 @@ echo ""
 
 pyinstaller --noconfirm --onefile --windowed \
     --name "PhotoManager" \
-    --add-data "${CUSTOMTKINTER_PATH}:customtkinter" \
     --hidden-import "PIL._tkinter_finder" \
-    --hidden-import "customtkinter" \
     --hidden-import "docx" \
     --hidden-import "docx.parts.image" \
     --hidden-import "lxml.etree" \
@@ -99,9 +95,9 @@ fi
 
 if [ -d "dist/PhotoManager.app" ]; then
     echo ""
-    echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║                    BUILD RÉUSSI !                         ║"
-    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo "========================================"
+    echo "         BUILD REUSSI !"
+    echo "========================================"
     echo ""
     echo "[4/4] Application créée avec succès !"
     echo ""
@@ -116,9 +112,9 @@ if [ -d "dist/PhotoManager.app" ]; then
     echo "      Une copie a été placée dans le dossier actuel."
 elif [ -f "dist/PhotoManager" ]; then
     echo ""
-    echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║                    BUILD RÉUSSI !                         ║"
-    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo "========================================"
+    echo "         BUILD REUSSI !"
+    echo "========================================"
     echo ""
     echo "[4/4] Exécutable créé: dist/PhotoManager"
     echo ""

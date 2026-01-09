@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
 Photo Manager - Application de gestion de photos pour générer des documents Word
-Compatible Windows et macOS
+Compatible Windows et macOS (fonctionne avec Tcl/Tk 8.5+)
 Ultra-optimisé pour traiter des milliers de photos
 """
 
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
-from PIL import Image
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
 import os
 import sys
-from typing import List, Tuple, Optional, Callable
+from typing import List, Optional, Callable
 from dataclasses import dataclass, field
 from docx import Document
-from docx.shared import Cm, Mm
+from docx.shared import Mm
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
@@ -22,13 +22,9 @@ import io
 import math
 import threading
 
-# Configuration
-ctk.set_appearance_mode("system")
-ctk.set_default_color_theme("blue")
-
 SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png')
 THUMB_SIZE = (100, 100)
-PHOTOS_PER_VIEW = 50  # Photos affichées par "page" de prévisualisation
+PHOTOS_PER_VIEW = 50
 
 
 @dataclass
@@ -36,13 +32,15 @@ class PhotoItem:
     """Photo avec métadonnées"""
     path: str
     rotation: int = 0
-    _thumb: Optional[ctk.CTkImage] = field(default=None, repr=False)
+    _thumb: Optional[ImageTk.PhotoImage] = field(default=None, repr=False)
+    _pil_img: Optional[Image.Image] = field(default=None, repr=False)
 
     def rotate(self):
         self.rotation = (self.rotation + 90) % 360
         self._thumb = None
+        self._pil_img = None
 
-    def get_thumb(self) -> Optional[ctk.CTkImage]:
+    def get_thumb(self) -> Optional[ImageTk.PhotoImage]:
         if self._thumb:
             return self._thumb
         try:
@@ -52,49 +50,57 @@ class PhotoItem:
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
-                self._thumb = ctk.CTkImage(img, img, img.size)
+                self._pil_img = img.copy()
+                self._thumb = ImageTk.PhotoImage(self._pil_img)
                 return self._thumb
         except:
             return None
 
     def clear(self):
         self._thumb = None
+        self._pil_img = None
 
 
-class PhotoCard(ctk.CTkFrame):
+class PhotoCard(ttk.Frame):
     """Carte photo compacte"""
 
     def __init__(self, master, photo: PhotoItem, index: int, on_delete: Callable, **kw):
-        super().__init__(master, width=130, height=160, **kw)
-        self.pack_propagate(False)
+        super().__init__(master, **kw)
 
         self.photo = photo
         self.index = index
         self.on_delete = on_delete
 
+        # Container avec bordure
+        self.configure(relief="solid", borderwidth=1)
+
         # Image
-        self.img_label = ctk.CTkLabel(self, text="...", width=100, height=100)
-        self.img_label.pack(pady=(5,2))
+        self.img_label = ttk.Label(self, text="...", width=12)
+        self.img_label.pack(pady=(5, 2))
 
         # Boutons
-        bf = ctk.CTkFrame(self, fg_color="transparent")
+        bf = ttk.Frame(self)
         bf.pack()
-        ctk.CTkButton(bf, text="↻", width=30, height=22, command=self._rotate).pack(side="left", padx=1)
-        ctk.CTkButton(bf, text="✕", width=30, height=22, fg_color="#c0392b",
-                     hover_color="#a93226", command=self._delete).pack(side="left", padx=1)
+
+        rotate_btn = ttk.Button(bf, text="↻", width=3, command=self._rotate)
+        rotate_btn.pack(side="left", padx=1)
+
+        delete_btn = ttk.Button(bf, text="✕", width=3, command=self._delete)
+        delete_btn.pack(side="left", padx=1)
 
         # Nom
         name = os.path.basename(photo.path)
-        ctk.CTkLabel(self, text=name[:16] + "..." if len(name) > 16 else name,
-                    font=("Arial", 8)).pack()
+        display_name = name[:16] + "..." if len(name) > 16 else name
+        ttk.Label(self, text=display_name, font=("Arial", 8)).pack()
 
         # Charger image après
-        self.after(1, self._load)
+        self.after(10, self._load)
 
     def _load(self):
         thumb = self.photo.get_thumb()
         if thumb:
             self.img_label.configure(image=thumb, text="")
+            self.img_label.image = thumb  # Keep reference
         else:
             self.img_label.configure(text="Err")
 
@@ -106,8 +112,68 @@ class PhotoCard(ctk.CTkFrame):
         self.on_delete(self.index)
 
 
-class PhotoManagerApp(ctk.CTk):
-    """Application principale ultra-optimisée"""
+class ScrollableFrame(ttk.Frame):
+    """Frame scrollable compatible Tk 8.5+"""
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+
+        # Canvas avec scrollbar
+        self.canvas = tk.Canvas(self, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = ttk.Frame(self.canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        # Bind mouse wheel
+        self.canvas.bind("<Enter>", self._bind_mousewheel)
+        self.canvas.bind("<Leave>", self._unbind_mousewheel)
+
+        # Resize handling
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+    def _on_canvas_configure(self, event):
+        self.canvas.itemconfig(self.canvas_frame, width=event.width)
+
+    def _bind_mousewheel(self, event):
+        if sys.platform == 'darwin':
+            self.canvas.bind_all("<MouseWheel>", self._on_mousewheel_mac)
+        else:
+            self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+            self.canvas.bind_all("<Button-4>", self._on_mousewheel_linux)
+            self.canvas.bind_all("<Button-5>", self._on_mousewheel_linux)
+
+    def _unbind_mousewheel(self, event):
+        self.canvas.unbind_all("<MouseWheel>")
+        if sys.platform != 'darwin':
+            self.canvas.unbind_all("<Button-4>")
+            self.canvas.unbind_all("<Button-5>")
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _on_mousewheel_mac(self, event):
+        self.canvas.yview_scroll(int(-1 * event.delta), "units")
+
+    def _on_mousewheel_linux(self, event):
+        if event.num == 4:
+            self.canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self.canvas.yview_scroll(1, "units")
+
+
+class PhotoManagerApp(tk.Tk):
+    """Application principale compatible Tk 8.5+"""
 
     def __init__(self):
         super().__init__()
@@ -115,101 +181,101 @@ class PhotoManagerApp(ctk.CTk):
         self.geometry("1200x800")
         self.minsize(900, 600)
 
+        # Style
+        self._setup_style()
+
         self.photos: List[PhotoItem] = []
         self.current_page = 0
         self._cards: List[PhotoCard] = []
 
         self._build_ui()
 
-        # Fix macOS black screen issue with deprecated Tk
-        if sys.platform == 'darwin':
-            self.update()
-            self.update_idletasks()
-            self.lift()
-            self.focus_force()
-            # Force window to refresh by toggling visibility
-            self.after(100, self._macos_refresh)
+    def _setup_style(self):
+        """Configure ttk style"""
+        style = ttk.Style()
 
-    def _macos_refresh(self):
-        """Force refresh on macOS to fix black screen with deprecated Tk"""
-        self.withdraw()
-        self.update()
-        self.deiconify()
-        self.update()
-        self.lift()
+        # Use native theme
+        if sys.platform == 'darwin':
+            style.theme_use('aqua')
+        elif sys.platform == 'win32':
+            style.theme_use('vista')
+        else:
+            style.theme_use('clam')
+
+        # Custom button styles
+        style.configure("Green.TButton", background="#27ae60")
+        style.configure("Red.TButton", background="#e74c3c")
 
     def _build_ui(self):
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        # Main container
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Panneau gauche
-        left = ctk.CTkFrame(self, width=240)
-        left.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        left.grid_propagate(False)
+        left = ttk.Frame(main_frame, width=240)
+        left.pack(side="left", fill="y", padx=(0, 10))
+        left.pack_propagate(False)
 
-        ctk.CTkLabel(left, text="Photo Manager", font=("Arial", 18, "bold")).pack(pady=(15,3))
-        ctk.CTkLabel(left, text="Export Word", font=("Arial", 10)).pack(pady=(0,15))
+        ttk.Label(left, text="Photo Manager", font=("Arial", 18, "bold")).pack(pady=(15, 3))
+        ttk.Label(left, text="Export Word", font=("Arial", 10)).pack(pady=(0, 15))
 
-        ctk.CTkFrame(left, height=1, fg_color="gray50").pack(fill="x", padx=10, pady=5)
+        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=5)
 
-        ctk.CTkLabel(left, text="Ajouter", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10,5))
-        ctk.CTkButton(left, text="+ Dossier", command=self._add_folder, height=30).pack(fill="x", padx=15, pady=2)
-        ctk.CTkButton(left, text="+ Fichiers", command=self._add_files, height=30).pack(fill="x", padx=15, pady=2)
+        ttk.Label(left, text="Ajouter", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10, 5))
+        ttk.Button(left, text="+ Dossier", command=self._add_folder).pack(fill="x", padx=15, pady=2)
+        ttk.Button(left, text="+ Fichiers", command=self._add_files).pack(fill="x", padx=15, pady=2)
 
-        self.count_lbl = ctk.CTkLabel(left, text="0 photos", font=("Arial", 10, "bold"))
+        self.count_lbl = ttk.Label(left, text="0 photos", font=("Arial", 10, "bold"))
         self.count_lbl.pack(pady=8)
 
-        ctk.CTkFrame(left, height=1, fg_color="gray50").pack(fill="x", padx=10, pady=5)
+        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=5)
 
-        ctk.CTkLabel(left, text="Photos/page", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10,5))
-        self.ppp = ctk.StringVar(value="6")
-        for v, t in [("4", "4 (2×2)"), ("6", "6 (2×3)"), ("9", "9 (3×3)")]:
-            ctk.CTkRadioButton(left, text=t, variable=self.ppp, value=v).pack(anchor="w", padx=25, pady=1)
+        ttk.Label(left, text="Photos/page", font=("Arial", 11, "bold")).pack(anchor="w", padx=15, pady=(10, 5))
+        self.ppp = tk.StringVar(value="6")
+        for v, t in [("4", "4 (2x2)"), ("6", "6 (2x3)"), ("9", "9 (3x3)")]:
+            ttk.Radiobutton(left, text=t, variable=self.ppp, value=v).pack(anchor="w", padx=25, pady=1)
 
-        ctk.CTkFrame(left, height=1, fg_color="gray50").pack(fill="x", padx=10, pady=10)
+        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkButton(left, text="EXPORTER WORD", command=self._export, height=40,
-                     fg_color="#27ae60", hover_color="#1e8449",
-                     font=("Arial", 12, "bold")).pack(fill="x", padx=15, pady=5)
+        export_btn = ttk.Button(left, text="EXPORTER WORD", command=self._export)
+        export_btn.pack(fill="x", padx=15, pady=5)
 
-        ctk.CTkButton(left, text="Tout effacer", command=self._clear, height=28,
-                     fg_color="#e74c3c", hover_color="#c0392b").pack(fill="x", padx=15, pady=5)
+        clear_btn = ttk.Button(left, text="Tout effacer", command=self._clear)
+        clear_btn.pack(fill="x", padx=15, pady=5)
 
-        ctk.CTkFrame(left, fg_color="transparent").pack(fill="both", expand=True)
-        ctk.CTkLabel(left, text="JPG, PNG", font=("Arial", 9), text_color="gray").pack(pady=5)
+        # Spacer
+        ttk.Frame(left).pack(fill="both", expand=True)
+        ttk.Label(left, text="JPG, PNG", font=("Arial", 9), foreground="gray").pack(pady=5)
 
         # Panneau droit
-        right = ctk.CTkFrame(self)
-        right.grid(row=0, column=1, sticky="nsew", padx=(0,10), pady=10)
-        right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(1, weight=1)
+        right = ttk.Frame(main_frame)
+        right.pack(side="left", fill="both", expand=True)
 
         # Header avec navigation
-        header = ctk.CTkFrame(right, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        header = ttk.Frame(right)
+        header.pack(fill="x", pady=(0, 5))
 
-        ctk.CTkLabel(header, text="Aperçu", font=("Arial", 13, "bold")).pack(side="left")
+        ttk.Label(header, text="Aperçu", font=("Arial", 13, "bold")).pack(side="left")
 
         # Navigation
-        nav = ctk.CTkFrame(header, fg_color="transparent")
+        nav = ttk.Frame(header)
         nav.pack(side="right")
 
-        self.prev_btn = ctk.CTkButton(nav, text="◀", width=30, command=self._prev_page)
+        self.prev_btn = ttk.Button(nav, text="<", width=3, command=self._prev_page)
         self.prev_btn.pack(side="left", padx=2)
 
-        self.page_lbl = ctk.CTkLabel(nav, text="0/0", width=80)
+        self.page_lbl = ttk.Label(nav, text="0/0", width=10, anchor="center")
         self.page_lbl.pack(side="left", padx=5)
 
-        self.next_btn = ctk.CTkButton(nav, text="▶", width=30, command=self._next_page)
+        self.next_btn = ttk.Button(nav, text=">", width=3, command=self._next_page)
         self.next_btn.pack(side="left", padx=2)
 
         # Zone photos scrollable
-        self.scroll = ctk.CTkScrollableFrame(right, fg_color=("gray90", "gray20"))
-        self.scroll.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.scroll = ScrollableFrame(right)
+        self.scroll.pack(fill="both", expand=True)
 
         # Grid container
-        self.grid_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        self.grid_frame.pack(fill="both", expand=True)
+        self.grid_frame = self.scroll.scrollable_frame
 
     def _add_folder(self):
         folder = filedialog.askdirectory(title="Dossier")
@@ -235,7 +301,6 @@ class PhotoManagerApp(ctk.CTk):
         if 0 <= index < len(self.photos):
             self.photos[index].clear()
             del self.photos[index]
-            # Ajuster la page si nécessaire
             max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
             if self.current_page > max_page:
                 self.current_page = max_page
@@ -281,13 +346,12 @@ class PhotoManagerApp(ctk.CTk):
         start = self.current_page * PHOTOS_PER_VIEW
         end = min(start + PHOTOS_PER_VIEW, len(self.photos))
 
-        # Calculer colonnes selon largeur
+        # Colonnes
         cols = 6
 
         for i, idx in enumerate(range(start, end)):
-            card = PhotoCard(self.grid_frame, self.photos[idx], idx,
-                           self._delete_photo, fg_color=("white", "gray30"))
-            card.grid(row=i // cols, column=i % cols, padx=3, pady=3)
+            card = PhotoCard(self.grid_frame, self.photos[idx], idx, self._delete_photo)
+            card.grid(row=i // cols, column=i % cols, padx=3, pady=3, sticky="nsew")
             self._cards.append(card)
 
     def _export(self):
@@ -304,26 +368,29 @@ class PhotoManagerApp(ctk.CTk):
         if not path:
             return
 
-        # Progress
-        prog = ctk.CTkToplevel(self)
+        # Progress window
+        prog = tk.Toplevel(self)
         prog.title("Export...")
         prog.geometry("350x120")
         prog.transient(self)
         prog.grab_set()
 
-        ctk.CTkLabel(prog, text="Génération du document Word...",
-                    font=("Arial", 12)).pack(pady=15)
-        bar = ctk.CTkProgressBar(prog, width=300)
-        bar.pack(pady=10)
-        bar.set(0)
+        ttk.Label(prog, text="Génération du document Word...", font=("Arial", 12)).pack(pady=15)
 
-        status = ctk.CTkLabel(prog, text="0%", font=("Arial", 10))
+        bar = ttk.Progressbar(prog, length=300, mode='determinate')
+        bar.pack(pady=10)
+
+        status = ttk.Label(prog, text="0%", font=("Arial", 10))
         status.pack()
+
+        def update_progress(p):
+            bar['value'] = p * 100
+            status.configure(text=f"{int(p * 100)}%")
+            prog.update_idletasks()
 
         def gen():
             try:
-                self._generate_word(path, lambda p: self.after(0, lambda: (
-                    bar.set(p), status.configure(text=f"{int(p*100)}%"))))
+                self._generate_word(path, lambda p: self.after(0, lambda: update_progress(p)))
                 self.after(0, lambda: self._done(prog, path, None))
             except Exception as e:
                 self.after(0, lambda: self._done(prog, path, str(e)))
@@ -352,8 +419,8 @@ class PhotoManagerApp(ctk.CTk):
         cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[ppp]
 
         # Dimensions page A4 - marges (en mm)
-        page_w_mm = 210 - 10  # 200mm utilisable
-        page_h_mm = 297 - 10  # 287mm utilisable
+        page_w_mm = 210 - 10
+        page_h_mm = 297 - 10
 
         # Espacement minimal entre images (2mm)
         gap = 2
@@ -430,18 +497,16 @@ class PhotoManagerApp(ctk.CTk):
 
                             # Adapter à la cellule en gardant ratio
                             if ratio > (cell_w / cell_h):
-                                # Image plus large : limiter par largeur
                                 final_w = cell_w
                                 final_h = cell_w / ratio
                             else:
-                                # Image plus haute : limiter par hauteur
                                 final_h = cell_h
                                 final_w = cell_h * ratio
 
                             para.add_run().add_picture(buf, width=Mm(final_w), height=Mm(final_h))
 
-                    except Exception as e:
-                        para.add_run(f"[Err]")
+                    except Exception:
+                        para.add_run("[Err]")
 
                     if progress:
                         progress((idx + 1) / total)
