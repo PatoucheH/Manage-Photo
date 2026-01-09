@@ -159,6 +159,7 @@ class ExportThread(QThread):
     def _generate_word(self):
         doc = Document()
 
+        # Marges de page minimales
         for section in doc.sections:
             section.top_margin = Mm(5)
             section.bottom_margin = Mm(5)
@@ -167,12 +168,22 @@ class ExportThread(QThread):
 
         cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[self.ppp]
 
-        page_w_mm = 210 - 10
+        # Dimensions en mm
+        page_w_mm = 210 - 10  # A4 - marges
         page_h_mm = 297 - 10
-        gap = 2
+        gap_mm = 3  # Marge uniforme entre photos (horizontal et vertical)
 
-        cell_w = (page_w_mm - gap * (cols - 1)) / cols
-        cell_h = (page_h_mm - gap * (rows - 1)) / rows
+        # Conversion mm -> pixels (300 DPI)
+        dpi = 300
+        mm_to_px = dpi / 25.4
+
+        page_w_px = int(page_w_mm * mm_to_px)
+        page_h_px = int(page_h_mm * mm_to_px)
+        gap_px = int(gap_mm * mm_to_px)
+
+        # Taille de chaque cellule photo
+        cell_w_px = (page_w_px - gap_px * (cols - 1)) // cols
+        cell_h_px = (page_h_px - gap_px * (rows - 1)) // rows
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -181,21 +192,11 @@ class ExportThread(QThread):
             if page_idx > 0:
                 doc.add_page_break()
 
-            table = doc.add_table(rows=rows, cols=cols)
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-            tbl = table._tbl
-            tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
-
-            tblCellMar = OxmlElement('w:tblCellMar')
-            for side in ['top', 'left', 'bottom', 'right']:
-                node = OxmlElement(f'w:{side}')
-                node.set(qn('w:w'), '0')
-                node.set(qn('w:type'), 'dxa')
-                tblCellMar.append(node)
-            tblPr.append(tblCellMar)
+            # Creer image composite pour cette page
+            composite = Image.new('RGB', (page_w_px, page_h_px), (255, 255, 255))
 
             start = page_idx * self.ppp
+            photos_on_page = min(self.ppp, total - start)
 
             for i in range(rows):
                 for j in range(cols):
@@ -204,11 +205,10 @@ class ExportThread(QThread):
                         continue
 
                     photo = self.photos[idx]
-                    cell = table.cell(i, j)
-                    para = cell.paragraphs[0]
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    para.paragraph_format.space_before = Mm(0)
-                    para.paragraph_format.space_after = Mm(0)
+
+                    # Position dans l'image composite
+                    x = j * (cell_w_px + gap_px)
+                    y = i * (cell_h_px + gap_px)
 
                     try:
                         with Image.open(photo.path) as img:
@@ -228,26 +228,42 @@ class ExportThread(QThread):
                                 else:
                                     img = img.convert('RGB')
 
-                            buf = io.BytesIO()
-                            img.save(buf, format='JPEG', quality=90)
-                            buf.seek(0)
+                            # Redimensionner pour tenir dans la cellule
+                            img_w, img_h = img.size
+                            ratio = img_w / img_h
+                            cell_ratio = cell_w_px / cell_h_px
 
-                            w, h = img.size
-                            ratio = w / h
-
-                            if ratio > (cell_w / cell_h):
-                                final_w = cell_w
-                                final_h = cell_w / ratio
+                            if ratio > cell_ratio:
+                                new_w = cell_w_px
+                                new_h = int(cell_w_px / ratio)
                             else:
-                                final_h = cell_h
-                                final_w = cell_h * ratio
+                                new_h = cell_h_px
+                                new_w = int(cell_h_px * ratio)
 
-                            para.add_run().add_picture(buf, width=Mm(final_w), height=Mm(final_h))
+                            resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
+                            img_resized = img.resize((new_w, new_h), resample)
+
+                            # Centrer dans la cellule
+                            offset_x = x + (cell_w_px - new_w) // 2
+                            offset_y = y + (cell_h_px - new_h) // 2
+
+                            composite.paste(img_resized, (offset_x, offset_y))
 
                     except Exception:
-                        para.add_run("[Err]")
+                        pass  # Ignorer les erreurs
 
                     self.progress.emit(int((idx + 1) / total * 100))
+
+            # Sauvegarder l'image composite et l'inserer dans le document
+            buf = io.BytesIO()
+            composite.save(buf, format='JPEG', quality=95)
+            buf.seek(0)
+
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            para.paragraph_format.space_before = Mm(0)
+            para.paragraph_format.space_after = Mm(0)
+            para.add_run().add_picture(buf, width=Mm(page_w_mm))
 
         doc.save(self.path)
 
