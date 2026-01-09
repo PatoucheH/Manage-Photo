@@ -402,7 +402,7 @@ class PhotoManagerApp(QMainWindow):
         if folder:
             files = sorted([
                 os.path.join(folder, f) for f in os.listdir(folder)
-                if f.lower().endswith(SUPPORTED_FORMATS)
+                if f.lower().endswith(SUPPORTED_FORMATS) and not f.startswith('.')
             ])
             if files:
                 self._add_photos(files)
