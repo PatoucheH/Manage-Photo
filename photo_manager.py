@@ -168,22 +168,27 @@ class ExportThread(QThread):
 
         cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[self.ppp]
 
-        # Dimensions en mm
-        page_w_mm = 210 - 10  # A4 - marges
-        page_h_mm = 297 - 10
+        # Dimensions en mm (A4 avec marges)
+        margin_mm = 5
+        page_w_mm = 210 - (margin_mm * 2)  # 200mm
+        page_h_mm = 297 - (margin_mm * 2)  # 287mm
         gap_mm = 3  # Marge uniforme entre photos (horizontal et vertical)
+
+        # Calculer taille des cellules en mm
+        cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
+        cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
 
         # Conversion mm -> pixels (300 DPI)
         dpi = 300
         mm_to_px = dpi / 25.4
 
-        page_w_px = int(page_w_mm * mm_to_px)
-        page_h_px = int(page_h_mm * mm_to_px)
+        cell_w_px = int(cell_w_mm * mm_to_px)
+        cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
 
-        # Taille de chaque cellule photo
-        cell_w_px = (page_w_px - gap_px * (cols - 1)) // cols
-        cell_h_px = (page_h_px - gap_px * (rows - 1)) // rows
+        # Taille reelle de l'image composite
+        page_w_px = cols * cell_w_px + (cols - 1) * gap_px
+        page_h_px = rows * cell_h_px + (rows - 1) * gap_px
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -259,11 +264,14 @@ class ExportThread(QThread):
             composite.save(buf, format='JPEG', quality=95)
             buf.seek(0)
 
+            # Calculer la largeur reelle en mm
+            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_mm
+
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             para.paragraph_format.space_before = Mm(0)
             para.paragraph_format.space_after = Mm(0)
-            para.add_run().add_picture(buf, width=Mm(page_w_mm))
+            para.add_run().add_picture(buf, width=Mm(real_w_mm))
 
         doc.save(self.path)
 
