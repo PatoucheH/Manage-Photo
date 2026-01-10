@@ -306,28 +306,29 @@ class ExportThread(QThread):
                                 else:
                                     img = img.convert('RGB')
 
-                            # Crop-to-fill: recadrer pour remplir exactement la cellule
+                            # Fit: ajuster sans couper, centrer dans la cellule
                             img_w, img_h = img.size
                             img_ratio = img_w / img_h
                             cell_ratio = cell_w_px / cell_h_px
 
+                            # Calculer la taille pour que l'image tienne dans la cellule
                             if img_ratio > cell_ratio:
-                                # Image trop large, couper les cotes
-                                new_w = int(img_h * cell_ratio)
-                                left = (img_w - new_w) // 2
-                                img = img.crop((left, 0, left + new_w, img_h))
+                                # Image plus large que la cellule
+                                new_w = cell_w_px
+                                new_h = int(cell_w_px / img_ratio)
                             else:
-                                # Image trop haute, couper haut/bas
-                                new_h = int(img_w / cell_ratio)
-                                top = (img_h - new_h) // 2
-                                img = img.crop((0, top, img_w, top + new_h))
+                                # Image plus haute que la cellule
+                                new_h = cell_h_px
+                                new_w = int(cell_h_px * img_ratio)
 
-                            # Redimensionner a la taille exacte de la cellule
+                            # Redimensionner en gardant le ratio
                             resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
-                            img_resized = img.resize((cell_w_px, cell_h_px), resample)
+                            img_resized = img.resize((new_w, new_h), resample)
 
-                            # Placer directement sans centrage (remplit toute la cellule)
-                            composite.paste(img_resized, (x, y))
+                            # Centrer dans la cellule (avec blanc autour si necessaire)
+                            offset_x = x + (cell_w_px - new_w) // 2
+                            offset_y = y + (cell_h_px - new_h) // 2
+                            composite.paste(img_resized, (offset_x, offset_y))
 
                     except Exception:
                         pass  # Ignorer les erreurs
