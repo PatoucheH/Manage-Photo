@@ -159,8 +159,8 @@ class ExportThread(QThread):
     def _generate_word(self):
         doc = Document()
 
-        # Marges de page genereuses pour eviter tout debordement
-        page_margin = 15  # mm
+        # Marges de page Word
+        page_margin = 10  # mm
         for section in doc.sections:
             section.top_margin = Mm(page_margin)
             section.bottom_margin = Mm(page_margin)
@@ -169,9 +169,14 @@ class ExportThread(QThread):
 
         cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[self.ppp]
 
-        # Zone imprimable reelle (A4 = 210x297mm)
-        page_w_mm = 210 - (page_margin * 2)  # 180mm
-        page_h_mm = 297 - (page_margin * 2)  # 267mm
+        # Zone disponible dans Word (A4 = 210x297mm moins marges)
+        available_w_mm = 210 - (page_margin * 2)  # 190mm
+        available_h_mm = 297 - (page_margin * 2)  # 277mm
+
+        # REDUIRE a 85% pour garantir que ca tienne TOUJOURS
+        safe_factor = 0.85
+        page_w_mm = available_w_mm * safe_factor
+        page_h_mm = available_h_mm * safe_factor
 
         # Marge uniforme entre photos (horizontale et verticale identiques)
         gap_mm = 2  # Marge en mm entre chaque photo
@@ -180,17 +185,17 @@ class ExportThread(QThread):
         cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
         cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
 
-        # Conversion mm -> pixels (300 DPI)
-        dpi = 300
+        # Conversion mm -> pixels (150 DPI pour eviter les gros fichiers)
+        dpi = 150
         mm_to_px = dpi / 25.4
 
         cell_w_px = int(cell_w_mm * mm_to_px)
         cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
 
-        # Taille reelle de l'image composite
-        page_w_px = cols * cell_w_px + (cols - 1) * gap_px
-        page_h_px = rows * cell_h_px + (rows - 1) * gap_px
+        # Taille de l'image composite en pixels
+        composite_w_px = cols * cell_w_px + (cols - 1) * gap_px
+        composite_h_px = rows * cell_h_px + (rows - 1) * gap_px
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -200,7 +205,7 @@ class ExportThread(QThread):
                 doc.add_page_break()
 
             # Creer image composite pour cette page
-            composite = Image.new('RGB', (page_w_px, page_h_px), (255, 255, 255))
+            composite = Image.new('RGB', (composite_w_px, composite_h_px), (255, 255, 255))
 
             start = page_idx * self.ppp
             photos_on_page = min(self.ppp, total - start)
@@ -268,17 +273,12 @@ class ExportThread(QThread):
             composite.save(buf, format='JPEG', quality=95)
             buf.seek(0)
 
-            # Dimensions finales = zone imprimable (garanti de tenir)
-            # On utilise directement page_w_mm et page_h_mm car l'image
-            # a ete creee pour ces dimensions exactes
-            final_w_mm = page_w_mm
-            final_h_mm = page_h_mm
-
+            # Inserer avec les dimensions reduites (85% de la zone disponible)
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             para.paragraph_format.space_before = Mm(0)
             para.paragraph_format.space_after = Mm(0)
-            para.add_run().add_picture(buf, width=Mm(final_w_mm), height=Mm(final_h_mm))
+            para.add_run().add_picture(buf, width=Mm(page_w_mm), height=Mm(page_h_mm))
 
         doc.save(self.path)
 
