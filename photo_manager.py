@@ -159,19 +159,19 @@ class ExportThread(QThread):
     def _generate_word(self):
         doc = Document()
 
-        # Marges de page minimales
+        # Marges de page genereuses pour eviter tout debordement
+        page_margin = 15  # mm
         for section in doc.sections:
-            section.top_margin = Mm(5)
-            section.bottom_margin = Mm(5)
-            section.left_margin = Mm(5)
-            section.right_margin = Mm(5)
+            section.top_margin = Mm(page_margin)
+            section.bottom_margin = Mm(page_margin)
+            section.left_margin = Mm(page_margin)
+            section.right_margin = Mm(page_margin)
 
         cols, rows = {4: (2, 2), 6: (2, 3), 9: (3, 3)}[self.ppp]
 
-        # Dimensions en mm (A4 avec marges)
-        margin_mm = 5
-        page_w_mm = 210 - (margin_mm * 2)  # 200mm
-        page_h_mm = 297 - (margin_mm * 2)  # 287mm
+        # Zone imprimable reelle (A4 = 210x297mm)
+        page_w_mm = 210 - (page_margin * 2)  # 180mm
+        page_h_mm = 297 - (page_margin * 2)  # 267mm
 
         # Marge uniforme entre photos (horizontale et verticale identiques)
         gap_mm = 2  # Marge en mm entre chaque photo
@@ -268,18 +268,11 @@ class ExportThread(QThread):
             composite.save(buf, format='JPEG', quality=95)
             buf.seek(0)
 
-            # Calculer dimensions reelles en mm
-            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_mm
-            real_h_mm = rows * cell_h_mm + (rows - 1) * gap_mm
-
-            # S'assurer que l'image tient dans la page (avec marge de securite)
-            max_w_mm = page_w_mm - 2  # Marge de securite
-            max_h_mm = page_h_mm - 2
-
-            # Calculer le facteur de reduction si necessaire
-            scale = min(max_w_mm / real_w_mm, max_h_mm / real_h_mm, 1.0)
-            final_w_mm = real_w_mm * scale
-            final_h_mm = real_h_mm * scale
+            # Dimensions finales = zone imprimable (garanti de tenir)
+            # On utilise directement page_w_mm et page_h_mm car l'image
+            # a ete creee pour ces dimensions exactes
+            final_w_mm = page_w_mm
+            final_h_mm = page_h_mm
 
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
