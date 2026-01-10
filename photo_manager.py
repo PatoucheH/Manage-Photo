@@ -172,7 +172,7 @@ class ExportThread(QThread):
         margin_mm = 5
         page_w_mm = 210 - (margin_mm * 2)  # 200mm
         page_h_mm = 297 - (margin_mm * 2)  # 287mm
-        gap_mm = 3  # Marge uniforme entre photos (horizontal et vertical)
+        gap_mm = 0  # Pas de marge entre les photos
 
         # Calculer taille des cellules en mm
         cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
