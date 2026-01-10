@@ -172,11 +172,14 @@ class ExportThread(QThread):
         margin_mm = 5
         page_w_mm = 210 - (margin_mm * 2)  # 200mm
         page_h_mm = 297 - (margin_mm * 2)  # 287mm
-        gap_mm = 0  # Pas de marge entre les photos
+
+        # Marges entre photos (reglables separement)
+        gap_h_mm = 3  # Marge horizontale (entre colonnes)
+        gap_v_mm = 0  # Marge verticale (entre lignes)
 
         # Calculer taille des cellules en mm
-        cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
-        cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
+        cell_w_mm = (page_w_mm - gap_h_mm * (cols - 1)) / cols
+        cell_h_mm = (page_h_mm - gap_v_mm * (rows - 1)) / rows
 
         # Conversion mm -> pixels (300 DPI)
         dpi = 300
@@ -184,11 +187,12 @@ class ExportThread(QThread):
 
         cell_w_px = int(cell_w_mm * mm_to_px)
         cell_h_px = int(cell_h_mm * mm_to_px)
-        gap_px = int(gap_mm * mm_to_px)
+        gap_h_px = int(gap_h_mm * mm_to_px)
+        gap_v_px = int(gap_v_mm * mm_to_px)
 
         # Taille reelle de l'image composite
-        page_w_px = cols * cell_w_px + (cols - 1) * gap_px
-        page_h_px = rows * cell_h_px + (rows - 1) * gap_px
+        page_w_px = cols * cell_w_px + (cols - 1) * gap_h_px
+        page_h_px = rows * cell_h_px + (rows - 1) * gap_v_px
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -212,8 +216,8 @@ class ExportThread(QThread):
                     photo = self.photos[idx]
 
                     # Position dans l'image composite
-                    x = j * (cell_w_px + gap_px)
-                    y = i * (cell_h_px + gap_px)
+                    x = j * (cell_w_px + gap_h_px)
+                    y = i * (cell_h_px + gap_v_px)
 
                     try:
                         with Image.open(photo.path) as img:
@@ -265,7 +269,7 @@ class ExportThread(QThread):
             buf.seek(0)
 
             # Calculer la largeur reelle en mm
-            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_mm
+            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_h_mm
 
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
