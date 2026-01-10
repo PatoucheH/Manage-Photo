@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Photo Manager - Application de gestion de photos pour generer des documents Word
-Compatible Windows et macOS (PyQt5)
+Photo Manager - Photo management application for generating Word documents
+Compatible with Windows and macOS (PyQt5)
 """
 
 import sys

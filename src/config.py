@@ -1,23 +1,24 @@
-"""Configuration et constantes de l'application"""
+"""Configuration and constants for the application"""
 
-# Formats d'images supportes
+# Supported image formats
 SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG')
 
-# Taille des miniatures
+# Thumbnail size in pixels
 THUMB_SIZE = (100, 100)
 
-# Nombre de photos par vue (pagination)
+# Number of photos per view (pagination)
 PHOTOS_PER_VIEW = 50
 
-# Configuration de l'export Word
-class WordExportConfig:
-    PAGE_MARGIN_MM = 10  # Marge de page en mm
-    GAP_MM = 2  # Espace entre les photos en mm
-    SAFE_FACTOR = 0.85  # Facteur de securite (85% de la zone disponible)
-    DPI = 150  # Resolution pour l'image composite
-    JPEG_QUALITY = 95  # Qualite JPEG
 
-    # Layouts disponibles: (colonnes, lignes)
+class WordExportConfig:
+    """Word export configuration"""
+    PAGE_MARGIN_MM = 10  # Page margin in millimeters
+    GAP_MM = 2  # Gap between photos in millimeters
+    SAFE_FACTOR = 0.85  # Safety factor (85% of available space)
+    DPI = 150  # Resolution for composite image
+    JPEG_QUALITY = 95  # JPEG quality
+
+    # Available layouts: (columns, rows)
     LAYOUTS = {
         4: (2, 2),
         6: (2, 3),

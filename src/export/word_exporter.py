@@ -1,4 +1,4 @@
-"""Export des photos vers Word"""
+"""Export photos to Word document"""
 
 import io
 import math
@@ -15,7 +15,7 @@ from ..config import WordExportConfig
 
 
 class WordExporter(QThread):
-    """Thread pour l'export Word"""
+    """Thread for Word export"""
 
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
@@ -29,7 +29,7 @@ class WordExporter(QThread):
         self.config = WordExportConfig()
 
     def run(self) -> None:
-        """Execute l'export"""
+        """Execute the export"""
         try:
             self._generate_word()
             self.finished.emit(self.path)
@@ -37,10 +37,10 @@ class WordExporter(QThread):
             self.error.emit(str(e))
 
     def _generate_word(self) -> None:
-        """Genere le document Word"""
+        """Generate the Word document"""
         doc = Document()
 
-        # Configuration des marges de page
+        # Configure page margins
         page_margin = self.config.PAGE_MARGIN_MM
         for section in doc.sections:
             section.top_margin = Mm(page_margin)
@@ -48,32 +48,32 @@ class WordExporter(QThread):
             section.left_margin = Mm(page_margin)
             section.right_margin = Mm(page_margin)
 
-        # Layout selon le nombre de photos par page
+        # Layout based on photos per page
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
 
-        # Zone disponible (A4 = 210x297mm)
+        # Available area (A4 = 210x297mm)
         available_w_mm = 210 - (page_margin * 2)
         available_h_mm = 297 - (page_margin * 2)
 
-        # Reduction pour garantir que ca tienne
+        # Reduce to ensure it fits
         safe_factor = self.config.SAFE_FACTOR
         page_w_mm = available_w_mm * safe_factor
         page_h_mm = available_h_mm * safe_factor
 
-        # Espacement entre photos
+        # Gap between photos
         gap_mm = self.config.GAP_MM
 
-        # Taille de chaque cellule
+        # Cell size
         cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
         cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
 
-        # Conversion mm -> pixels
+        # Convert mm to pixels
         mm_to_px = self.config.DPI / 25.4
         cell_w_px = int(cell_w_mm * mm_to_px)
         cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
 
-        # Taille de l'image composite
+        # Composite image size
         composite_w_px = cols * cell_w_px + (cols - 1) * gap_px
         composite_h_px = rows * cell_h_px + (rows - 1) * gap_px
 
@@ -84,7 +84,7 @@ class WordExporter(QThread):
             if page_idx > 0:
                 doc.add_page_break()
 
-            # Creer image composite (fond blanc)
+            # Create composite image (white background)
             composite = Image.new('RGB', (composite_w_px, composite_h_px), (255, 255, 255))
 
             start = page_idx * self.ppp
@@ -97,17 +97,17 @@ class WordExporter(QThread):
 
                     photo = self.photos[idx]
 
-                    # Position de la cellule
+                    # Cell position
                     x = j * (cell_w_px + gap_px)
                     y = i * (cell_h_px + gap_px)
 
-                    # Charger et placer l'image
+                    # Load and place the image
                     self._place_photo(composite, photo, x, y, cell_w_px, cell_h_px)
 
-                    # Progression
+                    # Update progress
                     self.progress.emit(int((idx + 1) / total * 100))
 
-            # Inserer l'image composite dans le document
+            # Insert composite image into document
             self._insert_composite(doc, composite, page_w_mm, page_h_mm)
 
         doc.save(self.path)
@@ -121,14 +121,14 @@ class WordExporter(QThread):
         cell_w: int,
         cell_h: int
     ) -> None:
-        """Place une photo dans l'image composite (mode FIT, sans crop)"""
+        """Place a photo in the composite image (FIT mode, no crop)"""
         try:
             with Image.open(photo.path) as img:
-                # Appliquer la rotation
+                # Apply rotation
                 if photo.rotation:
                     img = img.rotate(-photo.rotation, expand=True)
 
-                # Convertir en RGB
+                # Convert to RGB
                 if img.mode != 'RGB':
                     if img.mode in ('RGBA', 'LA', 'P'):
                         bg = Image.new('RGB', img.size, (255, 255, 255))
@@ -142,32 +142,32 @@ class WordExporter(QThread):
                     else:
                         img = img.convert('RGB')
 
-                # MODE FIT: Ajuster sans couper, garder le ratio
+                # FIT MODE: Adjust without cropping, maintain aspect ratio
                 img_w, img_h = img.size
                 img_ratio = img_w / img_h
                 cell_ratio = cell_w / cell_h
 
                 if img_ratio > cell_ratio:
-                    # Image plus large -> ajuster a la largeur
+                    # Image is wider -> fit to width
                     new_w = cell_w
                     new_h = int(cell_w / img_ratio)
                 else:
-                    # Image plus haute -> ajuster a la hauteur
+                    # Image is taller -> fit to height
                     new_h = cell_h
                     new_w = int(cell_h * img_ratio)
 
-                # Redimensionner
+                # Resize
                 resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
                 img_resized = img.resize((new_w, new_h), resample)
 
-                # Centrer dans la cellule (avec blanc autour)
+                # Center in cell (with white space around)
                 offset_x = x + (cell_w - new_w) // 2
                 offset_y = y + (cell_h - new_h) // 2
 
                 composite.paste(img_resized, (offset_x, offset_y))
 
         except Exception as e:
-            print(f"Erreur placement photo {photo.path}: {e}")
+            print(f"Error placing photo {photo.path}: {e}")
 
     def _insert_composite(
         self,
@@ -176,7 +176,7 @@ class WordExporter(QThread):
         width_mm: float,
         height_mm: float
     ) -> None:
-        """Insere l'image composite dans le document"""
+        """Insert the composite image into the document"""
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)

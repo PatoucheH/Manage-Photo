@@ -1,4 +1,4 @@
-"""Fenetre principale de l'application"""
+"""Main application window"""
 
 import os
 import math
@@ -7,173 +7,393 @@ from typing import List
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QRadioButton, QButtonGroup, QScrollArea,
-    QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame
+    QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame,
+    QGraphicsDropShadowEffect, QSizePolicy
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QFont, QColor
 
 from ..models import PhotoItem
 from ..config import SUPPORTED_FORMATS, PHOTOS_PER_VIEW
 from ..export import WordExporter
+from ..i18n import Translations, Language, tr
 from .widgets import PhotoCard
+from .styles import Styles, Colors
 
 
 class PhotoManagerApp(QMainWindow):
-    """Application principale"""
+    """Main application"""
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Photo Manager")
-        self.setMinimumSize(900, 600)
-        self.resize(1200, 800)
+        self.setMinimumSize(1000, 700)
+        self.resize(1300, 850)
 
         self.photos: List[PhotoItem] = []
         self.current_page = 0
         self._cards: List[PhotoCard] = []
 
+        # Apply theme
+        self.setStyleSheet(Styles.get_main_stylesheet())
+
+        # Register for language changes
+        Translations.add_listener(self._on_language_changed)
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Configure l'interface utilisateur"""
+        """Setup the user interface"""
         central = QWidget()
         self.setCentralWidget(central)
 
         main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
 
-        # Panneau gauche
-        self._setup_left_panel(main_layout)
+        # Left panel (sidebar)
+        self._setup_sidebar(main_layout)
 
-        # Panneau droit
-        self._setup_right_panel(main_layout)
+        # Right panel (content)
+        self._setup_content_area(main_layout)
 
-    def _setup_left_panel(self, parent_layout: QHBoxLayout) -> None:
-        """Configure le panneau gauche"""
-        left_panel = QFrame()
-        left_panel.setFixedWidth(240)
-        left_panel.setFrameStyle(QFrame.StyledPanel)
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(5)
+    def _setup_sidebar(self, parent_layout: QHBoxLayout) -> None:
+        """Setup the sidebar"""
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(280)
+        sidebar.setStyleSheet(Styles.get_sidebar_style())
 
-        # Titre
-        title = QLabel("Photo Manager")
-        title.setFont(QFont("Arial", 18, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(title)
+        # Shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(30)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 60))
+        sidebar.setGraphicsEffect(shadow)
 
-        subtitle = QLabel("Export Word")
-        subtitle.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(subtitle)
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(24, 28, 24, 28)
+        layout.setSpacing(8)
 
-        left_layout.addSpacing(15)
+        # Logo / Title
+        title_container = QWidget()
+        title_layout = QVBoxLayout(title_container)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(4)
 
-        # Section ajout
-        add_label = QLabel("Ajouter")
-        add_label.setFont(QFont("Arial", 11, QFont.Bold))
-        left_layout.addWidget(add_label)
+        self.title_label = QLabel(tr("app_title"))
+        self.title_label.setFont(QFont("Segoe UI", 22, QFont.Bold))
+        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        title_layout.addWidget(self.title_label)
 
-        folder_btn = QPushButton("+ Dossier")
-        folder_btn.clicked.connect(self._add_folder)
-        left_layout.addWidget(folder_btn)
+        self.subtitle_label = QLabel(tr("app_subtitle"))
+        self.subtitle_label.setFont(QFont("Segoe UI", 11))
+        self.subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
+        title_layout.addWidget(self.subtitle_label)
 
-        files_btn = QPushButton("+ Fichiers")
-        files_btn.clicked.connect(self._add_files)
-        left_layout.addWidget(files_btn)
+        layout.addWidget(title_container)
+        layout.addSpacing(24)
 
-        self.count_label = QLabel("0 photos")
-        self.count_label.setFont(QFont("Arial", 10, QFont.Bold))
+        # Separator
+        self._add_separator(layout)
+        layout.addSpacing(16)
+
+        # Add section
+        self.add_section_label = QLabel(tr("add_photos"))
+        self.add_section_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self.add_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
+        layout.addWidget(self.add_section_label)
+        layout.addSpacing(12)
+
+        self.folder_btn = QPushButton(f"  {tr('folder')}")
+        self.folder_btn.setStyleSheet(Styles.get_action_button_style())
+        self.folder_btn.setCursor(Qt.PointingHandCursor)
+        self.folder_btn.clicked.connect(self._add_folder)
+        layout.addWidget(self.folder_btn)
+
+        self.files_btn = QPushButton(f"  {tr('files')}")
+        self.files_btn.setStyleSheet(Styles.get_action_button_style())
+        self.files_btn.setCursor(Qt.PointingHandCursor)
+        self.files_btn.clicked.connect(self._add_files)
+        layout.addWidget(self.files_btn)
+
+        layout.addSpacing(16)
+
+        # Photo counter
+        self.count_container = QFrame()
+        self.count_container.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BG_DARK};
+                border-radius: 10px;
+                padding: 8px;
+            }}
+        """)
+        count_layout = QVBoxLayout(self.count_container)
+        count_layout.setContentsMargins(16, 12, 16, 12)
+
+        self.count_label = QLabel("0")
+        self.count_label.setFont(QFont("Segoe UI", 28, QFont.Bold))
+        self.count_label.setStyleSheet(f"color: {Colors.PRIMARY};")
         self.count_label.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(self.count_label)
+        count_layout.addWidget(self.count_label)
 
-        left_layout.addSpacing(10)
+        self.count_text = QLabel(tr("photos"))
+        self.count_text.setFont(QFont("Segoe UI", 11))
+        self.count_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self.count_text.setAlignment(Qt.AlignCenter)
+        count_layout.addWidget(self.count_text)
 
-        # Photos par page
-        ppp_label = QLabel("Photos/page")
-        ppp_label.setFont(QFont("Arial", 11, QFont.Bold))
-        left_layout.addWidget(ppp_label)
+        layout.addWidget(self.count_container)
+        layout.addSpacing(20)
+
+        # Separator
+        self._add_separator(layout)
+        layout.addSpacing(16)
+
+        # Photos per page
+        self.ppp_section_label = QLabel(tr("photos_per_page"))
+        self.ppp_section_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self.ppp_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
+        layout.addWidget(self.ppp_section_label)
+        layout.addSpacing(8)
 
         self.ppp_group = QButtonGroup(self)
-        for val, text in [(4, "4 (2x2)"), (6, "6 (2x3)"), (9, "9 (3x3)")]:
-            radio = QRadioButton(text)
-            self.ppp_group.addButton(radio, val)
-            left_layout.addWidget(radio)
-            if val == 6:
-                radio.setChecked(True)
+        radio_container = QFrame()
+        radio_container.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BG_DARK};
+                border-radius: 10px;
+            }}
+        """)
+        radio_layout = QVBoxLayout(radio_container)
+        radio_layout.setContentsMargins(16, 12, 16, 12)
+        radio_layout.setSpacing(4)
 
-        left_layout.addSpacing(15)
+        self.radio_4 = QRadioButton(tr("photos_layout_4"))
+        self.radio_4.setFont(QFont("Segoe UI", 11))
+        self.radio_4.setCursor(Qt.PointingHandCursor)
+        self.ppp_group.addButton(self.radio_4, 4)
+        radio_layout.addWidget(self.radio_4)
 
-        # Bouton export
-        export_btn = QPushButton("EXPORTER WORD")
-        export_btn.setFont(QFont("Arial", 12, QFont.Bold))
-        export_btn.setStyleSheet("background-color: #27ae60; color: white; padding: 10px;")
-        export_btn.clicked.connect(self._export)
-        left_layout.addWidget(export_btn)
+        self.radio_6 = QRadioButton(tr("photos_layout_6"))
+        self.radio_6.setFont(QFont("Segoe UI", 11))
+        self.radio_6.setCursor(Qt.PointingHandCursor)
+        self.radio_6.setChecked(True)
+        self.ppp_group.addButton(self.radio_6, 6)
+        radio_layout.addWidget(self.radio_6)
 
-        clear_btn = QPushButton("Tout effacer")
-        clear_btn.setStyleSheet("background-color: #e74c3c; color: white;")
-        clear_btn.clicked.connect(self._clear)
-        left_layout.addWidget(clear_btn)
+        self.radio_9 = QRadioButton(tr("photos_layout_9"))
+        self.radio_9.setFont(QFont("Segoe UI", 11))
+        self.radio_9.setCursor(Qt.PointingHandCursor)
+        self.ppp_group.addButton(self.radio_9, 9)
+        radio_layout.addWidget(self.radio_9)
 
-        left_layout.addStretch()
+        layout.addWidget(radio_container)
+        layout.addSpacing(24)
 
-        formats_label = QLabel("JPG, PNG")
-        formats_label.setStyleSheet("color: gray;")
-        formats_label.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(formats_label)
+        # Export button
+        self.export_btn = QPushButton(f"  {tr('export_word')}")
+        self.export_btn.setStyleSheet(Styles.get_primary_button_style())
+        self.export_btn.setCursor(Qt.PointingHandCursor)
+        self.export_btn.clicked.connect(self._export)
+        layout.addWidget(self.export_btn)
 
-        parent_layout.addWidget(left_panel)
+        layout.addSpacing(8)
 
-    def _setup_right_panel(self, parent_layout: QHBoxLayout) -> None:
-        """Configure le panneau droit"""
-        right_panel = QFrame()
-        right_panel.setFrameStyle(QFrame.StyledPanel)
-        right_layout = QVBoxLayout(right_panel)
+        # Clear button
+        self.clear_btn = QPushButton(tr("clear_all"))
+        self.clear_btn.setStyleSheet(Styles.get_danger_button_style())
+        self.clear_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_btn.clicked.connect(self._clear)
+        layout.addWidget(self.clear_btn)
 
-        # Header avec navigation
+        layout.addStretch()
+
+        # Footer with language toggle and formats
+        footer_container = QWidget()
+        footer_layout = QVBoxLayout(footer_container)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setSpacing(8)
+
+        # Language toggle (small, in footer)
+        lang_row = QHBoxLayout()
+        lang_row.setSpacing(6)
+
+        lang_row.addStretch()
+
+        self.en_btn = QPushButton("EN")
+        self.en_btn.setMinimumSize(40, 26)
+        self.en_btn.setMaximumSize(40, 26)
+        self.en_btn.setCursor(Qt.PointingHandCursor)
+        self.en_btn.clicked.connect(self._switch_to_english)
+        lang_row.addWidget(self.en_btn)
+
+        self.fr_btn = QPushButton("FR")
+        self.fr_btn.setMinimumSize(40, 26)
+        self.fr_btn.setMaximumSize(40, 26)
+        self.fr_btn.setCursor(Qt.PointingHandCursor)
+        self.fr_btn.clicked.connect(self._switch_to_french)
+        lang_row.addWidget(self.fr_btn)
+
+        lang_row.addStretch()
+
+        self._update_language_buttons()
+        footer_layout.addLayout(lang_row)
+
+        # Supported formats
+        self.footer_label = QLabel(tr("supported_formats"))
+        self.footer_label.setFont(QFont("Segoe UI", 10))
+        self.footer_label.setStyleSheet(f"color: {Colors.TEXT_MUTED};")
+        self.footer_label.setAlignment(Qt.AlignCenter)
+        footer_layout.addWidget(self.footer_label)
+
+        layout.addWidget(footer_container)
+
+        parent_layout.addWidget(sidebar)
+
+    def _add_separator(self, layout: QVBoxLayout) -> None:
+        """Add a horizontal separator"""
+        separator = QFrame()
+        separator.setFixedHeight(1)
+        separator.setStyleSheet(f"background-color: {Colors.BORDER};")
+        layout.addWidget(separator)
+
+    def _setup_content_area(self, parent_layout: QHBoxLayout) -> None:
+        """Setup the content area"""
+        content = QFrame()
+        content.setObjectName("contentArea")
+        content.setStyleSheet(Styles.get_content_area_style())
+
+        # Shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(30)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        content.setGraphicsEffect(shadow)
+
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(16)
+
+        # Header with navigation
         header = QHBoxLayout()
+        header.setSpacing(12)
 
-        preview_label = QLabel("Apercu")
-        preview_label.setFont(QFont("Arial", 13, QFont.Bold))
-        header.addWidget(preview_label)
+        self.preview_label = QLabel(tr("preview"))
+        self.preview_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        self.preview_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        header.addWidget(self.preview_label)
 
         header.addStretch()
 
-        self.prev_btn = QPushButton("<")
-        self.prev_btn.setFixedWidth(30)
-        self.prev_btn.clicked.connect(self._prev_page)
-        header.addWidget(self.prev_btn)
+        # Navigation
+        nav_container = QFrame()
+        nav_container.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BG_CARD};
+                border-radius: 10px;
+                border: 1px solid {Colors.BORDER};
+            }}
+        """)
+        nav_layout = QHBoxLayout(nav_container)
+        nav_layout.setContentsMargins(8, 6, 8, 6)
+        nav_layout.setSpacing(8)
 
-        self.page_label = QLabel("0/0")
-        self.page_label.setFixedWidth(60)
+        self.prev_btn = QPushButton("<")
+        self.prev_btn.setFixedSize(36, 36)
+        self.prev_btn.setStyleSheet(Styles.get_nav_button_style())
+        self.prev_btn.setCursor(Qt.PointingHandCursor)
+        self.prev_btn.clicked.connect(self._prev_page)
+        nav_layout.addWidget(self.prev_btn)
+
+        self.page_label = QLabel("0 / 0")
+        self.page_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.page_label.setFixedWidth(80)
         self.page_label.setAlignment(Qt.AlignCenter)
-        header.addWidget(self.page_label)
+        self.page_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        nav_layout.addWidget(self.page_label)
 
         self.next_btn = QPushButton(">")
-        self.next_btn.setFixedWidth(30)
+        self.next_btn.setFixedSize(36, 36)
+        self.next_btn.setStyleSheet(Styles.get_nav_button_style())
+        self.next_btn.setCursor(Qt.PointingHandCursor)
         self.next_btn.clicked.connect(self._next_page)
-        header.addWidget(self.next_btn)
+        nav_layout.addWidget(self.next_btn)
 
-        right_layout.addLayout(header)
+        header.addWidget(nav_container)
+        content_layout.addLayout(header)
 
-        # Zone de scroll pour les photos
+        # Scroll area for photos
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("background-color: #f5f5f5;")
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {Colors.BG_DARK};
+                border: none;
+                border-radius: 12px;
+            }}
+        """)
 
         self.grid_widget = QWidget()
+        self.grid_widget.setStyleSheet(f"background-color: {Colors.BG_DARK};")
         self.grid_layout = QGridLayout(self.grid_widget)
-        self.grid_layout.setSpacing(5)
+        self.grid_layout.setSpacing(16)
+        self.grid_layout.setContentsMargins(8, 8, 8, 8)
         self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         self.scroll_area.setWidget(self.grid_widget)
-        right_layout.addWidget(self.scroll_area)
+        content_layout.addWidget(self.scroll_area)
 
-        parent_layout.addWidget(right_panel, 1)
+        parent_layout.addWidget(content, 1)
+
+    def _set_language(self, language: Language) -> None:
+        """Set the application language"""
+        Translations.set_language(language)
+
+    def _switch_to_english(self) -> None:
+        """Switch to English"""
+        self._set_language(Language.ENGLISH)
+
+    def _switch_to_french(self) -> None:
+        """Switch to French"""
+        self._set_language(Language.FRENCH)
+
+    def _update_language_buttons(self) -> None:
+        """Update language button styles"""
+        is_english = Translations.get_language() == Language.ENGLISH
+        self.en_btn.setStyleSheet(Styles.get_language_button_style(active=is_english))
+        self.fr_btn.setStyleSheet(Styles.get_language_button_style(active=not is_english))
+
+    def _on_language_changed(self) -> None:
+        """Handle language change"""
+        # Update all translatable texts
+        self.title_label.setText(tr("app_title"))
+        self.subtitle_label.setText(tr("app_subtitle"))
+        self.add_section_label.setText(tr("add_photos"))
+        self.folder_btn.setText(f"  {tr('folder')}")
+        self.files_btn.setText(f"  {tr('files')}")
+        self.count_text.setText(tr("photos"))
+        self.ppp_section_label.setText(tr("photos_per_page"))
+        self.radio_4.setText(tr("photos_layout_4"))
+        self.radio_6.setText(tr("photos_layout_6"))
+        self.radio_9.setText(tr("photos_layout_9"))
+        self.export_btn.setText(f"  {tr('export_word')}")
+        self.clear_btn.setText(tr("clear_all"))
+        self.footer_label.setText(tr("supported_formats"))
+        self.preview_label.setText(tr("preview"))
+
+        # Update language buttons
+        self._update_language_buttons()
 
     def _add_folder(self) -> None:
-        """Ajoute toutes les photos d'un dossier"""
-        folder = QFileDialog.getExistingDirectory(self, "Dossier")
+        """Add all photos from a folder"""
+        folder = QFileDialog.getExistingDirectory(self, tr("select_folder"))
         if folder:
             files = sorted([
                 os.path.join(folder, f) for f in os.listdir(folder)
@@ -183,23 +403,23 @@ class PhotoManagerApp(QMainWindow):
                 self._add_photos(files)
 
     def _add_files(self) -> None:
-        """Ajoute des fichiers photos"""
+        """Add photo files"""
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Photos", "",
+            self, tr("select_photos"), "",
             "Images (*.jpg *.jpeg *.png *.JPG *.JPEG *.PNG)"
         )
         if files:
             self._add_photos(files)
 
     def _add_photos(self, files: List[str]) -> None:
-        """Ajoute des photos a la liste"""
+        """Add photos to the list"""
         existing = {p.path for p in self.photos}
         new_photos = [PhotoItem(f) for f in files if f not in existing]
         self.photos.extend(new_photos)
         self._update_view()
 
     def _delete_photo(self, index: int) -> None:
-        """Supprime une photo"""
+        """Delete a photo"""
         if 0 <= index < len(self.photos):
             self.photos[index].clear()
             del self.photos[index]
@@ -209,38 +429,49 @@ class PhotoManagerApp(QMainWindow):
             self._update_view()
 
     def _rotate_photo(self, index: int) -> None:
-        """Callback pour la rotation (deja geree dans PhotoCard)"""
+        """Rotation callback"""
         pass
 
     def _clear(self) -> None:
-        """Efface toutes les photos"""
-        for p in self.photos:
-            p.clear()
-        self.photos.clear()
-        self.current_page = 0
-        self._update_view()
+        """Clear all photos"""
+        if not self.photos:
+            return
+
+        reply = QMessageBox.question(
+            self, tr("confirm"),
+            tr("confirm_clear"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            for p in self.photos:
+                p.clear()
+            self.photos.clear()
+            self.current_page = 0
+            self._update_view()
 
     def _prev_page(self) -> None:
-        """Page precedente"""
+        """Previous page"""
         if self.current_page > 0:
             self.current_page -= 1
             self._refresh_grid()
 
     def _next_page(self) -> None:
-        """Page suivante"""
+        """Next page"""
         max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
         if self.current_page < max_page:
             self.current_page += 1
             self._refresh_grid()
 
     def _update_view(self) -> None:
-        """Met a jour l'affichage"""
-        self.count_label.setText(f"{len(self.photos)} photos")
+        """Update the display"""
+        self.count_label.setText(str(len(self.photos)))
         self._refresh_grid()
 
     def _refresh_grid(self) -> None:
-        """Rafraichit la grille de photos"""
-        # Nettoyer les cartes existantes
+        """Refresh the photo grid"""
+        # Clean existing cards
         for card in self._cards:
             card.deleteLater()
         self._cards.clear()
@@ -251,17 +482,23 @@ class PhotoManagerApp(QMainWindow):
                 item.widget().deleteLater()
 
         if not self.photos:
-            self.page_label.setText("0/0")
+            self.page_label.setText("0 / 0")
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
             return
 
         # Pagination
         total_pages = math.ceil(len(self.photos) / PHOTOS_PER_VIEW)
-        self.page_label.setText(f"{self.current_page + 1}/{total_pages}")
+        self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
+
+        # Enable/disable buttons
+        self.prev_btn.setEnabled(self.current_page > 0)
+        self.next_btn.setEnabled(self.current_page < total_pages - 1)
 
         start = self.current_page * PHOTOS_PER_VIEW
         end = min(start + PHOTOS_PER_VIEW, len(self.photos))
 
-        cols = 6
+        cols = 5
 
         for i, idx in enumerate(range(start, end)):
             card = PhotoCard(
@@ -272,14 +509,14 @@ class PhotoManagerApp(QMainWindow):
             self._cards.append(card)
 
     def _export(self) -> None:
-        """Lance l'export Word"""
+        """Start Word export"""
         if not self.photos:
-            QMessageBox.warning(self, "Attention", "Aucune photo.")
+            QMessageBox.warning(self, tr("warning"), tr("no_photos"))
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Enregistrer", "photos.docx",
-            "Word (*.docx)"
+            self, tr("save_document"), "photos.docx",
+            tr("word_document")
         )
         if not path:
             return
@@ -287,12 +524,24 @@ class PhotoManagerApp(QMainWindow):
         ppp = self.ppp_group.checkedId()
 
         # Progress dialog
-        progress = QProgressDialog("Generation du document Word...", None, 0, 100, self)
+        progress = QProgressDialog(tr("generating_word"), None, 0, 100, self)
         progress.setWindowModality(Qt.WindowModal)
         progress.setAutoClose(True)
+        progress.setMinimumDuration(0)
+        progress.setStyleSheet(f"""
+            QProgressDialog {{
+                background: {Colors.BG_CARD};
+                border-radius: 12px;
+            }}
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
+                font-size: 14px;
+                padding: 16px;
+            }}
+        """)
         progress.show()
 
-        # Lancer l'export en thread
+        # Start export thread
         self.export_thread = WordExporter(self.photos, path, ppp)
         self.export_thread.progress.connect(progress.setValue)
         self.export_thread.finished.connect(lambda p: self._export_done(p, progress))
@@ -300,11 +549,19 @@ class PhotoManagerApp(QMainWindow):
         self.export_thread.start()
 
     def _export_done(self, path: str, progress: QProgressDialog) -> None:
-        """Export termine avec succes"""
+        """Export completed successfully"""
         progress.close()
-        QMessageBox.information(self, "Succes", f"Exporte:\n{path}")
+        QMessageBox.information(
+            self, tr("export_success"),
+            f"{tr('export_success_msg')}\n\n{path}"
+        )
 
     def _export_error(self, error: str, progress: QProgressDialog) -> None:
-        """Erreur lors de l'export"""
+        """Export error"""
         progress.close()
-        QMessageBox.critical(self, "Erreur", error)
+        QMessageBox.critical(self, tr("export_error"), error)
+
+    def closeEvent(self, event) -> None:
+        """Clean up on close"""
+        Translations.remove_listener(self._on_language_changed)
+        super().closeEvent(event)
