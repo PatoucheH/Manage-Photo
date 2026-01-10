@@ -173,13 +173,12 @@ class ExportThread(QThread):
         page_w_mm = 210 - (margin_mm * 2)  # 200mm
         page_h_mm = 297 - (margin_mm * 2)  # 287mm
 
-        # Marges entre photos (reglables separement)
-        gap_h_mm = 3  # Marge horizontale (entre colonnes)
-        gap_v_mm = 0  # Marge verticale (entre lignes)
+        # Marge uniforme entre photos (horizontale et verticale identiques)
+        gap_mm = 2  # Marge en mm entre chaque photo
 
         # Calculer taille des cellules en mm
-        cell_w_mm = (page_w_mm - gap_h_mm * (cols - 1)) / cols
-        cell_h_mm = (page_h_mm - gap_v_mm * (rows - 1)) / rows
+        cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
+        cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
 
         # Conversion mm -> pixels (300 DPI)
         dpi = 300
@@ -187,12 +186,11 @@ class ExportThread(QThread):
 
         cell_w_px = int(cell_w_mm * mm_to_px)
         cell_h_px = int(cell_h_mm * mm_to_px)
-        gap_h_px = int(gap_h_mm * mm_to_px)
-        gap_v_px = int(gap_v_mm * mm_to_px)
+        gap_px = int(gap_mm * mm_to_px)
 
         # Taille reelle de l'image composite
-        page_w_px = cols * cell_w_px + (cols - 1) * gap_h_px
-        page_h_px = rows * cell_h_px + (rows - 1) * gap_v_px
+        page_w_px = cols * cell_w_px + (cols - 1) * gap_px
+        page_h_px = rows * cell_h_px + (rows - 1) * gap_px
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -216,8 +214,8 @@ class ExportThread(QThread):
                     photo = self.photos[idx]
 
                     # Position dans l'image composite
-                    x = j * (cell_w_px + gap_h_px)
-                    y = i * (cell_h_px + gap_v_px)
+                    x = j * (cell_w_px + gap_px)
+                    y = i * (cell_h_px + gap_px)
 
                     try:
                         with Image.open(photo.path) as img:
@@ -237,26 +235,28 @@ class ExportThread(QThread):
                                 else:
                                     img = img.convert('RGB')
 
-                            # Redimensionner pour tenir dans la cellule
+                            # Crop-to-fill: recadrer pour remplir exactement la cellule
                             img_w, img_h = img.size
-                            ratio = img_w / img_h
+                            img_ratio = img_w / img_h
                             cell_ratio = cell_w_px / cell_h_px
 
-                            if ratio > cell_ratio:
-                                new_w = cell_w_px
-                                new_h = int(cell_w_px / ratio)
+                            if img_ratio > cell_ratio:
+                                # Image trop large, couper les cotes
+                                new_w = int(img_h * cell_ratio)
+                                left = (img_w - new_w) // 2
+                                img = img.crop((left, 0, left + new_w, img_h))
                             else:
-                                new_h = cell_h_px
-                                new_w = int(cell_h_px * ratio)
+                                # Image trop haute, couper haut/bas
+                                new_h = int(img_w / cell_ratio)
+                                top = (img_h - new_h) // 2
+                                img = img.crop((0, top, img_w, top + new_h))
 
+                            # Redimensionner a la taille exacte de la cellule
                             resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
-                            img_resized = img.resize((new_w, new_h), resample)
+                            img_resized = img.resize((cell_w_px, cell_h_px), resample)
 
-                            # Centrer dans la cellule
-                            offset_x = x + (cell_w_px - new_w) // 2
-                            offset_y = y + (cell_h_px - new_h) // 2
-
-                            composite.paste(img_resized, (offset_x, offset_y))
+                            # Placer directement sans centrage (remplit toute la cellule)
+                            composite.paste(img_resized, (x, y))
 
                     except Exception:
                         pass  # Ignorer les erreurs
@@ -269,7 +269,7 @@ class ExportThread(QThread):
             buf.seek(0)
 
             # Calculer la largeur reelle en mm
-            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_h_mm
+            real_w_mm = cols * cell_w_mm + (cols - 1) * gap_mm
 
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
