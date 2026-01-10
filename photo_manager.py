@@ -268,14 +268,24 @@ class ExportThread(QThread):
             composite.save(buf, format='JPEG', quality=95)
             buf.seek(0)
 
-            # Calculer la largeur reelle en mm
+            # Calculer dimensions reelles en mm
             real_w_mm = cols * cell_w_mm + (cols - 1) * gap_mm
+            real_h_mm = rows * cell_h_mm + (rows - 1) * gap_mm
+
+            # S'assurer que l'image tient dans la page (avec marge de securite)
+            max_w_mm = page_w_mm - 2  # Marge de securite
+            max_h_mm = page_h_mm - 2
+
+            # Calculer le facteur de reduction si necessaire
+            scale = min(max_w_mm / real_w_mm, max_h_mm / real_h_mm, 1.0)
+            final_w_mm = real_w_mm * scale
+            final_h_mm = real_h_mm * scale
 
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             para.paragraph_format.space_before = Mm(0)
             para.paragraph_format.space_after = Mm(0)
-            para.add_run().add_picture(buf, width=Mm(real_w_mm))
+            para.add_run().add_picture(buf, width=Mm(final_w_mm), height=Mm(final_h_mm))
 
         doc.save(self.path)
 
