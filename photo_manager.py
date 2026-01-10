@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QRadioButton, QButtonGroup, QScrollArea,
     QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame,
-    QSizePolicy
+    QSizePolicy, QDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QImage, QFont
@@ -68,6 +68,64 @@ class PhotoItem:
         self._pixmap = None
 
 
+class ImageViewerDialog(QDialog):
+    """Modal pour afficher une photo en grand"""
+
+    def __init__(self, photo: PhotoItem, parent=None):
+        super().__init__(parent)
+        self.photo = photo
+        self.setWindowTitle(os.path.basename(photo.path))
+        self.setModal(True)
+
+        # Taille max = 90% de l'ecran
+        screen = QApplication.primaryScreen().geometry()
+        max_w = int(screen.width() * 0.9)
+        max_h = int(screen.height() * 0.9)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Image label
+        self.img_label = QLabel()
+        self.img_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.img_label)
+
+        # Bouton fermer
+        close_btn = QPushButton("Fermer")
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn)
+
+        # Charger l'image en grand
+        self._load_full_image(max_w, max_h - 50)
+
+    def _load_full_image(self, max_w, max_h):
+        try:
+            with Image.open(self.photo.path) as img:
+                if self.photo.rotation:
+                    img = img.rotate(-self.photo.rotation, expand=True)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # Redimensionner pour tenir dans la fenetre
+                img_w, img_h = img.size
+                scale = min(max_w / img_w, max_h / img_h, 1.0)
+                new_w = int(img_w * scale)
+                new_h = int(img_h * scale)
+
+                resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
+                img = img.resize((new_w, new_h), resample)
+
+                # Convertir en QPixmap
+                data = img.tobytes("raw", "RGB")
+                qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimg)
+
+                self.img_label.setPixmap(pixmap)
+                self.resize(new_w + 20, new_h + 70)
+        except Exception as e:
+            self.img_label.setText(f"Erreur: {e}")
+
+
 class PhotoCard(QFrame):
     """Carte photo compacte"""
 
@@ -80,16 +138,19 @@ class PhotoCard(QFrame):
 
         self.setFrameStyle(QFrame.Box | QFrame.Raised)
         self.setFixedSize(130, 160)
+        self.setCursor(Qt.PointingHandCursor)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(2)
 
-        # Image label
+        # Image label (cliquable)
         self.img_label = QLabel()
         self.img_label.setFixedSize(100, 100)
         self.img_label.setAlignment(Qt.AlignCenter)
         self.img_label.setStyleSheet("background-color: #f0f0f0;")
+        self.img_label.setCursor(Qt.PointingHandCursor)
+        self.img_label.mousePressEvent = self._show_full_image
         layout.addWidget(self.img_label, alignment=Qt.AlignCenter)
 
         # Buttons
@@ -127,6 +188,11 @@ class PhotoCard(QFrame):
             self.img_label.setPixmap(scaled)
         else:
             self.img_label.setText("Err")
+
+    def _show_full_image(self, event):
+        """Ouvre la photo en grand dans une modal"""
+        dialog = ImageViewerDialog(self.photo, self.window())
+        dialog.exec_()
 
     def _rotate(self):
         self.photo.rotate()
