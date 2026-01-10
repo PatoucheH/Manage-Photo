@@ -43,6 +43,16 @@ pyinstaller --noconfirm --onefile --windowed \
     --hidden-import "docx.parts.image" \
     --hidden-import "lxml.etree" \
     --hidden-import "lxml._elementpath" \
+    --hidden-import "src" \
+    --hidden-import "src.config" \
+    --hidden-import "src.models" \
+    --hidden-import "src.models.photo" \
+    --hidden-import "src.ui" \
+    --hidden-import "src.ui.main_window" \
+    --hidden-import "src.ui.dialogs" \
+    --hidden-import "src.ui.widgets" \
+    --hidden-import "src.export" \
+    --hidden-import "src.export.word_exporter" \
     --osx-bundle-identifier "com.photomanager.app" \
     photo_manager.py
 
