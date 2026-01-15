@@ -9,7 +9,7 @@ from PyQt5.QtGui import QFont, QColor, QKeyEvent, QCursor, QPainter, QPen, QBrus
 
 from ..models import PhotoItem
 from ..i18n import tr
-from .styles import Colors
+from .styles import Colors, SYSTEM_FONT
 
 
 class ImageViewerDialog(QDialog):
@@ -80,7 +80,7 @@ class ImageViewerDialog(QDialog):
 
         # Title
         title = QLabel(self.photo.filename)
-        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        title.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         header.addWidget(title)
 
@@ -90,7 +90,7 @@ class ImageViewerDialog(QDialog):
         close_btn = QPushButton("×")
         close_btn.setFixedSize(40, 40)
         close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.setFont(QFont("Segoe UI", 20))
+        close_btn.setFont(QFont(SYSTEM_FONT, 20))
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.BG_CARD};
@@ -134,7 +134,7 @@ class ImageViewerDialog(QDialog):
 
         # Info label
         info_label = QLabel(tr("press_esc"))
-        info_label.setFont(QFont("Segoe UI", 10))
+        info_label.setFont(QFont(SYSTEM_FONT, 10))
         info_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; background: transparent;")
         footer.addWidget(info_label)
 
@@ -143,7 +143,7 @@ class ImageViewerDialog(QDialog):
         # Bottom close button
         close_btn_bottom = QPushButton(tr("close"))
         close_btn_bottom.setCursor(Qt.PointingHandCursor)
-        close_btn_bottom.setFont(QFont("Segoe UI", 11))
+        close_btn_bottom.setFont(QFont(SYSTEM_FONT, 11))
         close_btn_bottom.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.PRIMARY};

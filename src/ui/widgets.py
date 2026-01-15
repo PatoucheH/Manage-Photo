@@ -11,7 +11,8 @@ from PyQt5.QtGui import QFont, QColor, QPainter, QPainterPath, QBrush, QDrag, QP
 from ..models import PhotoItem
 from ..i18n import tr
 from .dialogs import ImageViewerDialog
-from .styles import Colors, Styles
+from .styles import Colors, Styles, SYSTEM_FONT
+import sip
 
 
 class PageChangeIndicator(QWidget):
@@ -107,7 +108,7 @@ class PageChangeIndicator(QWidget):
         text_color = QColor(Colors.TEXT_PRIMARY)
         text_color.setAlpha(150 + int(105 * self.progress))
         painter.setPen(QPen(text_color))
-        font = QFont("Segoe UI", 10, QFont.Bold)
+        font = QFont(SYSTEM_FONT, 10, QFont.Bold)
         painter.setFont(font)
 
         if self.direction == "prev":
@@ -333,7 +334,7 @@ class PhotoCard(QFrame):
                 border-radius: 8px;
                 font-size: 18px;
                 font-weight: bold;
-                font-family: "Segoe UI";
+                font-family: "{SYSTEM_FONT}";
             }}
             QPushButton:hover {{
                 background: {Colors.PRIMARY};
@@ -359,7 +360,7 @@ class PhotoCard(QFrame):
                 border: none;
                 border-radius: 8px;
                 font-size: 28px;
-                font-family: "Segoe UI";
+                font-family: "{SYSTEM_FONT}";
             }}
             QPushButton:hover {{
                 background: {Colors.PRIMARY};
@@ -381,7 +382,7 @@ class PhotoCard(QFrame):
                 border-radius: 8px;
                 font-size: 32px;
                 font-weight: bold;
-                font-family: "Segoe UI";
+                font-family: "{SYSTEM_FONT}";
             }}
             QPushButton:hover {{
                 background: {Colors.DANGER};
@@ -494,6 +495,11 @@ class PhotoCard(QFrame):
         """)
 
         drag.exec_(Qt.MoveAction)
+
+        # Check if the widget was deleted during drag (happens when photo is moved)
+        # This prevents RuntimeError: wrapped C/C++ object has been deleted
+        if sip.isdeleted(self):
+            return
 
         # Restore style and cursor after drag
         self.setCursor(Qt.OpenHandCursor)

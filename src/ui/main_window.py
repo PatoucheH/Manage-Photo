@@ -18,7 +18,7 @@ from ..config import SUPPORTED_FORMATS, PHOTOS_PER_VIEW
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
 from .widgets import PhotoCard, PhotoGridContainer
-from .styles import Styles, Colors
+from .styles import Styles, Colors, SYSTEM_FONT
 
 
 class PhotoManagerApp(QMainWindow):
@@ -83,13 +83,13 @@ class PhotoManagerApp(QMainWindow):
         title_layout.setSpacing(4)
 
         self.title_label = QLabel(tr("app_title"))
-        self.title_label.setFont(QFont("Segoe UI", 26, QFont.Bold))
+        self.title_label.setFont(QFont(SYSTEM_FONT, 26, QFont.Bold))
         self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         self.title_label.setAlignment(Qt.AlignCenter)
         title_layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(tr("app_subtitle"))
-        self.subtitle_label.setFont(QFont("Segoe UI", 13))
+        self.subtitle_label.setFont(QFont(SYSTEM_FONT, 13))
         self.subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.subtitle_label.setAlignment(Qt.AlignCenter)
         title_layout.addWidget(self.subtitle_label)
@@ -103,20 +103,23 @@ class PhotoManagerApp(QMainWindow):
 
         # Add section
         self.add_section_label = QLabel(tr("add_photos"))
-        self.add_section_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.add_section_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
         self.add_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
+        self.add_section_label.setMinimumHeight(20)
         layout.addWidget(self.add_section_label)
         layout.addSpacing(12)
 
         self.folder_btn = QPushButton(f"  {tr('folder')}")
         self.folder_btn.setStyleSheet(Styles.get_action_button_style())
         self.folder_btn.setCursor(Qt.PointingHandCursor)
+        self.folder_btn.setMinimumHeight(44)
         self.folder_btn.clicked.connect(self._add_folder)
         layout.addWidget(self.folder_btn)
 
         self.files_btn = QPushButton(f"  {tr('files')}")
         self.files_btn.setStyleSheet(Styles.get_action_button_style())
         self.files_btn.setCursor(Qt.PointingHandCursor)
+        self.files_btn.setMinimumHeight(44)
         self.files_btn.clicked.connect(self._add_files)
         layout.addWidget(self.files_btn)
 
@@ -124,6 +127,8 @@ class PhotoManagerApp(QMainWindow):
 
         # Photo counter
         self.count_container = QFrame()
+        self.count_container.setMinimumHeight(90)
+        self.count_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         self.count_container.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BG_DARK};
@@ -135,15 +140,17 @@ class PhotoManagerApp(QMainWindow):
         count_layout.setContentsMargins(16, 12, 16, 12)
 
         self.count_label = QLabel("0")
-        self.count_label.setFont(QFont("Segoe UI", 32, QFont.Bold))
+        self.count_label.setFont(QFont(SYSTEM_FONT, 32, QFont.Bold))
         self.count_label.setStyleSheet(f"color: {Colors.PRIMARY};")
         self.count_label.setAlignment(Qt.AlignCenter)
+        self.count_label.setMinimumHeight(40)
         count_layout.addWidget(self.count_label)
 
         self.count_text = QLabel(tr("photos"))
-        self.count_text.setFont(QFont("Segoe UI", 14))
+        self.count_text.setFont(QFont(SYSTEM_FONT, 14))
         self.count_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.count_text.setAlignment(Qt.AlignCenter)
+        self.count_text.setMinimumHeight(20)
         count_layout.addWidget(self.count_text)
 
         layout.addWidget(self.count_container)
@@ -155,13 +162,16 @@ class PhotoManagerApp(QMainWindow):
 
         # Photos per page
         self.ppp_section_label = QLabel(tr("photos_per_page"))
-        self.ppp_section_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.ppp_section_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
         self.ppp_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
+        self.ppp_section_label.setMinimumHeight(20)
         layout.addWidget(self.ppp_section_label)
         layout.addSpacing(8)
 
         self.ppp_group = QButtonGroup(self)
         radio_container = QFrame()
+        radio_container.setMinimumHeight(110)
+        radio_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         radio_container.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BG_DARK};
@@ -173,21 +183,24 @@ class PhotoManagerApp(QMainWindow):
         radio_layout.setSpacing(6)
 
         self.radio_4 = QRadioButton(tr("photos_layout_4"))
-        self.radio_4.setFont(QFont("Segoe UI", 13))
+        self.radio_4.setFont(QFont(SYSTEM_FONT, 13))
         self.radio_4.setCursor(Qt.PointingHandCursor)
+        self.radio_4.setMinimumHeight(28)
         self.ppp_group.addButton(self.radio_4, 4)
         radio_layout.addWidget(self.radio_4)
 
         self.radio_6 = QRadioButton(tr("photos_layout_6"))
-        self.radio_6.setFont(QFont("Segoe UI", 13))
+        self.radio_6.setFont(QFont(SYSTEM_FONT, 13))
         self.radio_6.setCursor(Qt.PointingHandCursor)
+        self.radio_6.setMinimumHeight(28)
         self.radio_6.setChecked(True)
         self.ppp_group.addButton(self.radio_6, 6)
         radio_layout.addWidget(self.radio_6)
 
         self.radio_9 = QRadioButton(tr("photos_layout_9"))
-        self.radio_9.setFont(QFont("Segoe UI", 13))
+        self.radio_9.setFont(QFont(SYSTEM_FONT, 13))
         self.radio_9.setCursor(Qt.PointingHandCursor)
+        self.radio_9.setMinimumHeight(28)
         self.ppp_group.addButton(self.radio_9, 9)
         radio_layout.addWidget(self.radio_9)
 
@@ -198,6 +211,7 @@ class PhotoManagerApp(QMainWindow):
         self.export_btn = QPushButton(f"  {tr('export_word')}")
         self.export_btn.setStyleSheet(Styles.get_primary_button_style())
         self.export_btn.setCursor(Qt.PointingHandCursor)
+        self.export_btn.setMinimumHeight(50)
         self.export_btn.clicked.connect(self._export)
         layout.addWidget(self.export_btn)
 
@@ -207,6 +221,7 @@ class PhotoManagerApp(QMainWindow):
         self.clear_btn = QPushButton(tr("clear_all"))
         self.clear_btn.setStyleSheet(Styles.get_danger_button_style())
         self.clear_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_btn.setMinimumHeight(40)
         self.clear_btn.clicked.connect(self._clear)
         layout.addWidget(self.clear_btn)
 
@@ -245,7 +260,7 @@ class PhotoManagerApp(QMainWindow):
 
         # Supported formats
         self.footer_label = QLabel(tr("supported_formats"))
-        self.footer_label.setFont(QFont("Segoe UI", 10))
+        self.footer_label.setFont(QFont(SYSTEM_FONT, 10))
         self.footer_label.setStyleSheet(f"color: {Colors.TEXT_MUTED};")
         self.footer_label.setAlignment(Qt.AlignCenter)
         footer_layout.addWidget(self.footer_label)
@@ -284,7 +299,7 @@ class PhotoManagerApp(QMainWindow):
         header.setSpacing(12)
 
         self.preview_label = QLabel(tr("preview"))
-        self.preview_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        self.preview_label.setFont(QFont(SYSTEM_FONT, 18, QFont.Bold))
         self.preview_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         header.addWidget(self.preview_label)
 
@@ -305,22 +320,23 @@ class PhotoManagerApp(QMainWindow):
 
         self.prev_btn = QPushButton("◀")
         self.prev_btn.setFixedSize(44, 44)
-        self.prev_btn.setFont(QFont("Segoe UI", 16))
+        self.prev_btn.setFont(QFont(SYSTEM_FONT, 16))
         self.prev_btn.setStyleSheet(Styles.get_nav_button_style())
         self.prev_btn.setCursor(Qt.PointingHandCursor)
         self.prev_btn.clicked.connect(self._prev_page)
         nav_layout.addWidget(self.prev_btn)
 
         self.page_label = QLabel("0 / 0")
-        self.page_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
-        self.page_label.setFixedWidth(80)
+        self.page_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
+        self.page_label.setMinimumWidth(80)
+        self.page_label.setMinimumHeight(28)
         self.page_label.setAlignment(Qt.AlignCenter)
         self.page_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         nav_layout.addWidget(self.page_label)
 
         self.next_btn = QPushButton("▶")
         self.next_btn.setFixedSize(44, 44)
-        self.next_btn.setFont(QFont("Segoe UI", 16))
+        self.next_btn.setFont(QFont(SYSTEM_FONT, 16))
         self.next_btn.setStyleSheet(Styles.get_nav_button_style())
         self.next_btn.setCursor(Qt.PointingHandCursor)
         self.next_btn.clicked.connect(self._next_page)

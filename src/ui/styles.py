@@ -1,5 +1,21 @@
 """Styles and theme for the application"""
 
+import sys
+
+
+def get_system_font() -> str:
+    """Get the appropriate system font for the current platform"""
+    if sys.platform == "darwin":  # macOS
+        return "SF Pro Display"
+    elif sys.platform == "win32":  # Windows
+        return "Segoe UI"
+    else:  # Linux and others
+        return "Ubuntu"
+
+
+# Platform-specific font for use in QFont() calls
+SYSTEM_FONT = get_system_font()
+
 
 class Colors:
     """Modern color palette"""
@@ -43,7 +59,7 @@ class Styles:
             }}
 
             QWidget {{
-                font-family: 'Segoe UI', 'SF Pro Display', -apple-system, sans-serif;
+                font-family: '{SYSTEM_FONT}', -apple-system, BlinkMacSystemFont, sans-serif;
                 font-size: 13px;
                 color: {Colors.TEXT_PRIMARY};
             }}
