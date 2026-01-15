@@ -322,7 +322,7 @@ class PhotoManagerApp(QMainWindow):
         content_layout.setContentsMargins(24, 24, 24, 24)
         content_layout.setSpacing(16)
 
-        # Header with navigation
+        # Header with page info
         header = QHBoxLayout()
         header.setSpacing(12)
 
@@ -333,44 +333,20 @@ class PhotoManagerApp(QMainWindow):
 
         header.addStretch()
 
-        # Navigation
-        nav_container = QFrame()
-        nav_container.setStyleSheet(f"""
-            QFrame {{
-                background: {Colors.BG_CARD};
-                border-radius: 10px;
-                border: 1px solid {Colors.BORDER};
-            }}
-        """)
-        nav_layout = QHBoxLayout(nav_container)
-        nav_layout.setContentsMargins(8, 6, 8, 6)
-        nav_layout.setSpacing(8)
-
-        self.prev_btn = QPushButton("◀")
-        self.prev_btn.setFixedSize(44, 44)
-        self.prev_btn.setFont(QFont(SYSTEM_FONT, 16))
-        self.prev_btn.setStyleSheet(Styles.get_nav_button_style())
-        self.prev_btn.setCursor(Qt.PointingHandCursor)
-        self.prev_btn.clicked.connect(self._prev_page)
-        nav_layout.addWidget(self.prev_btn)
-
+        # Page indicator (no buttons - use side zones to navigate)
         self.page_label = QLabel("0 / 0")
         self.page_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
         self.page_label.setMinimumWidth(80)
         self.page_label.setMinimumHeight(28)
         self.page_label.setAlignment(Qt.AlignCenter)
-        self.page_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
-        nav_layout.addWidget(self.page_label)
+        self.page_label.setStyleSheet(f"""
+            color: {Colors.TEXT_SECONDARY};
+            background: {Colors.BG_CARD};
+            border-radius: 8px;
+            padding: 4px 12px;
+        """)
+        header.addWidget(self.page_label)
 
-        self.next_btn = QPushButton("▶")
-        self.next_btn.setFixedSize(44, 44)
-        self.next_btn.setFont(QFont(SYSTEM_FONT, 16))
-        self.next_btn.setStyleSheet(Styles.get_nav_button_style())
-        self.next_btn.setCursor(Qt.PointingHandCursor)
-        self.next_btn.clicked.connect(self._next_page)
-        nav_layout.addWidget(self.next_btn)
-
-        header.addWidget(nav_container)
         content_layout.addLayout(header)
 
         # Photo grid container with page change zones
@@ -560,8 +536,6 @@ class PhotoManagerApp(QMainWindow):
 
         if not self.photos:
             self.page_label.setText("0 / 0")
-            self.prev_btn.setEnabled(False)
-            self.next_btn.setEnabled(False)
             self.grid_container.update_zones_visibility(False, False)
             return
 
@@ -569,13 +543,9 @@ class PhotoManagerApp(QMainWindow):
         total_pages = math.ceil(len(self.photos) / PHOTOS_PER_VIEW)
         self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
 
-        # Enable/disable buttons
+        # Update zones visibility
         can_prev = self.current_page > 0
         can_next = self.current_page < total_pages - 1
-        self.prev_btn.setEnabled(can_prev)
-        self.next_btn.setEnabled(can_next)
-
-        # Update drop zones for drag page change
         self.grid_container.update_zones_visibility(can_prev, can_next)
 
         start = self.current_page * PHOTOS_PER_VIEW

@@ -6,11 +6,12 @@ import sys
 def get_system_font() -> str:
     """Get the appropriate system font for the current platform"""
     if sys.platform == "darwin":  # macOS
-        return "SF Pro Display"
+        # Use .AppleSystemUIFont which is always available on macOS
+        return ".AppleSystemUIFont"
     elif sys.platform == "win32":  # Windows
         return "Segoe UI"
     else:  # Linux and others
-        return "Ubuntu"
+        return "Sans"
 
 
 # Platform-specific font for use in QFont() calls

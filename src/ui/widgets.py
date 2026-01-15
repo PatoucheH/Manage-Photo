@@ -40,9 +40,22 @@ class PageChangeIndicator(QWidget):
         """Enable or disable this zone (based on whether page change is possible)"""
         self.enabled = enabled
         self.setAcceptDrops(enabled)
+        # Set cursor to indicate clickability
+        if enabled:
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
         if not enabled:
             self.deactivate()
         self.update()
+
+    def mousePressEvent(self, event):
+        """Handle click to change page immediately"""
+        if self.enabled and event.button() == Qt.LeftButton:
+            self.page_change_triggered.emit(self.direction)
+            event.accept()
+        else:
+            event.ignore()
 
     def activate(self):
         """Start the progress timer (when drag enters)"""
@@ -160,8 +173,11 @@ class PageChangeIndicator(QWidget):
 
     def dragEnterEvent(self, event):
         if self.enabled and event.mimeData().hasText():
-            event.acceptProposedAction()
-            self.activate()
+            text = event.mimeData().text()
+            # Only accept if it's a valid photo index
+            if text and text.isdigit():
+                event.acceptProposedAction()
+                self.activate()
 
     def dragLeaveEvent(self, event):
         self.deactivate()
@@ -531,19 +547,22 @@ class PhotoCard(QFrame):
     def dragEnterEvent(self, event) -> None:
         """Accept drag if it contains photo index"""
         if event.mimeData().hasText():
-            source_index = int(event.mimeData().text())
-            if source_index != self.index:
-                event.acceptProposedAction()
-                # Visual feedback - highlight drop target
-                self.setStyleSheet(f"""
-                    QFrame#photoCard {{
-                        background: {Colors.BG_CARD};
-                        border-radius: 14px;
-                        border: 2px solid {Colors.SUCCESS};
-                    }}
-                """)
-        else:
-            event.ignore()
+            text = event.mimeData().text()
+            # Check that text is not empty and is a valid integer
+            if text and text.isdigit():
+                source_index = int(text)
+                if source_index != self.index:
+                    event.acceptProposedAction()
+                    # Visual feedback - highlight drop target
+                    self.setStyleSheet(f"""
+                        QFrame#photoCard {{
+                            background: {Colors.BG_CARD};
+                            border-radius: 14px;
+                            border: 2px solid {Colors.SUCCESS};
+                        }}
+                    """)
+                    return
+        event.ignore()
 
     def dragLeaveEvent(self, event) -> None:
         """Reset style when drag leaves"""
@@ -561,10 +580,12 @@ class PhotoCard(QFrame):
     def dropEvent(self, event) -> None:
         """Handle drop - move photo"""
         if event.mimeData().hasText():
-            source_index = int(event.mimeData().text())
-            if source_index != self.index and self.on_move:
-                self.on_move(source_index, self.index)
-            event.acceptProposedAction()
+            text = event.mimeData().text()
+            if text and text.isdigit():
+                source_index = int(text)
+                if source_index != self.index and self.on_move:
+                    self.on_move(source_index, self.index)
+                event.acceptProposedAction()
 
         # Reset style
         self.setStyleSheet(f"""
