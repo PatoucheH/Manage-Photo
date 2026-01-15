@@ -1,7 +1,6 @@
 """Main application window"""
 
 import os
-import math
 from typing import List
 
 from PyQt5.QtWidgets import (
@@ -10,15 +9,18 @@ from PyQt5.QtWidgets import (
     QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame,
     QGraphicsDropShadowEffect, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
 
 from ..models import PhotoItem
-from ..config import SUPPORTED_FORMATS, PHOTOS_PER_VIEW
+from ..config import SUPPORTED_FORMATS
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
-from .widgets import PhotoCard, PhotoGridContainer
+from .widgets import PhotoCard
 from .styles import Styles, Colors, SYSTEM_FONT
+
+# Number of photos to load at a time
+PHOTOS_BATCH_SIZE = 50
 
 
 class PhotoManagerApp(QMainWindow):
@@ -31,8 +33,8 @@ class PhotoManagerApp(QMainWindow):
         self.resize(1300, 850)
 
         self.photos: List[PhotoItem] = []
-        self.current_page = 0
         self._cards: List[PhotoCard] = []
+        self._photos_displayed = 0  # Number of photos currently displayed
 
         # Apply theme
         self.setStyleSheet(Styles.get_main_stylesheet())
@@ -98,7 +100,7 @@ class PhotoManagerApp(QMainWindow):
         sidebar.setStyleSheet("background: transparent;")
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(24, 28, 24, 16)  # Less bottom margin since footer is outside
+        layout.setContentsMargins(24, 28, 24, 16)
         layout.setSpacing(8)
 
         # Logo / Title
@@ -185,7 +187,7 @@ class PhotoManagerApp(QMainWindow):
         self._add_separator(layout)
         layout.addSpacing(16)
 
-        # Photos per page
+        # Photos per page (for export)
         self.ppp_section_label = QLabel(tr("photos_per_page"))
         self.ppp_section_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
         self.ppp_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
@@ -250,9 +252,9 @@ class PhotoManagerApp(QMainWindow):
         self.clear_btn.clicked.connect(self._clear)
         layout.addWidget(self.clear_btn)
 
-        # Add sidebar content to scroll area (NO stretch - let content have natural height)
+        # Add sidebar content to scroll area
         sidebar_scroll.setWidget(sidebar)
-        outer_layout.addWidget(sidebar_scroll, 1)  # stretch factor 1 to fill available space
+        outer_layout.addWidget(sidebar_scroll, 1)
 
         # Footer stays at bottom, outside scroll area
         footer_container = QWidget()
@@ -322,7 +324,7 @@ class PhotoManagerApp(QMainWindow):
         content_layout.setContentsMargins(24, 24, 24, 24)
         content_layout.setSpacing(16)
 
-        # Header with page info
+        # Header
         header = QHBoxLayout()
         header.setSpacing(12)
 
@@ -333,27 +335,35 @@ class PhotoManagerApp(QMainWindow):
 
         header.addStretch()
 
-        # Page indicator (no buttons - use side zones to navigate)
-        self.page_label = QLabel("0 / 0")
-        self.page_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
-        self.page_label.setMinimumWidth(80)
-        self.page_label.setMinimumHeight(28)
-        self.page_label.setAlignment(Qt.AlignCenter)
-        self.page_label.setStyleSheet(f"""
-            color: {Colors.TEXT_SECONDARY};
-            background: {Colors.BG_CARD};
-            border-radius: 8px;
-            padding: 4px 12px;
-        """)
-        header.addWidget(self.page_label)
+        # Photos loaded indicator
+        self.loaded_label = QLabel("")
+        self.loaded_label.setFont(QFont(SYSTEM_FONT, 12))
+        self.loaded_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        header.addWidget(self.loaded_label)
 
         content_layout.addLayout(header)
 
-        # Photo grid container with page change zones
-        self.grid_container = PhotoGridContainer()
-        self.grid_container.on_prev_page = self._prev_page
-        self.grid_container.on_next_page = self._next_page
+        # Scroll area for photo grid
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {Colors.BG_DARK};
+                border: none;
+                border-radius: 12px;
+            }}
+        """)
 
+        # Container for grid + load more button
+        self.grid_container = QWidget()
+        self.grid_container.setStyleSheet(f"background-color: {Colors.BG_DARK};")
+        container_layout = QVBoxLayout(self.grid_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(16)
+
+        # Grid widget
         self.grid_widget = QWidget()
         self.grid_widget.setStyleSheet(f"background-color: {Colors.BG_DARK};")
         self.grid_layout = QGridLayout(self.grid_widget)
@@ -361,8 +371,36 @@ class PhotoManagerApp(QMainWindow):
         self.grid_layout.setContentsMargins(8, 8, 8, 8)
         self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        self.grid_container.set_grid_widget(self.grid_widget)
-        content_layout.addWidget(self.grid_container)
+        container_layout.addWidget(self.grid_widget)
+
+        # Load more button
+        self.load_more_btn = QPushButton(tr("load_more"))
+        self.load_more_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.BG_CARD};
+                color: {Colors.TEXT_PRIMARY};
+                border: 2px dashed {Colors.BORDER};
+                border-radius: 12px;
+                padding: 20px;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background: {Colors.BG_HOVER};
+                border-color: {Colors.PRIMARY};
+                color: {Colors.PRIMARY};
+            }}
+        """)
+        self.load_more_btn.setCursor(Qt.PointingHandCursor)
+        self.load_more_btn.setMinimumHeight(60)
+        self.load_more_btn.clicked.connect(self._load_more)
+        self.load_more_btn.hide()  # Hidden by default
+        container_layout.addWidget(self.load_more_btn)
+
+        container_layout.addStretch()
+
+        self.scroll_area.setWidget(self.grid_container)
+        content_layout.addWidget(self.scroll_area)
 
         parent_layout.addWidget(content, 1)
 
@@ -401,9 +439,13 @@ class PhotoManagerApp(QMainWindow):
         self.clear_btn.setText(tr("clear_all"))
         self.footer_label.setText(tr("supported_formats"))
         self.preview_label.setText(tr("preview"))
+        self.load_more_btn.setText(tr("load_more"))
 
         # Update language buttons
         self._update_language_buttons()
+
+        # Update loaded label
+        self._update_loaded_label()
 
         # Refresh grid to update card buttons text
         if self.photos:
@@ -434,6 +476,9 @@ class PhotoManagerApp(QMainWindow):
         existing = {p.path for p in self.photos}
         new_photos = [PhotoItem(f) for f in files if f not in existing]
         self.photos.extend(new_photos)
+
+        # Reset displayed count to show first batch
+        self._photos_displayed = min(PHOTOS_BATCH_SIZE, len(self.photos))
         self._update_view()
 
     def _delete_photo(self, index: int) -> None:
@@ -441,9 +486,8 @@ class PhotoManagerApp(QMainWindow):
         if 0 <= index < len(self.photos):
             self.photos[index].clear()
             del self.photos[index]
-            max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
-            if self.current_page > max_page:
-                self.current_page = max_page
+            # Adjust displayed count
+            self._photos_displayed = min(self._photos_displayed, len(self.photos))
             self._update_view()
 
     def _rotate_photo(self, index: int) -> None:
@@ -464,6 +508,13 @@ class PhotoManagerApp(QMainWindow):
         # Refresh the grid
         self._refresh_grid()
 
+    def _load_more(self) -> None:
+        """Load more photos"""
+        remaining = len(self.photos) - self._photos_displayed
+        to_load = min(PHOTOS_BATCH_SIZE, remaining)
+        self._photos_displayed += to_load
+        self._refresh_grid()
+
     def _clear(self) -> None:
         """Clear all photos"""
         if not self.photos:
@@ -480,45 +531,43 @@ class PhotoManagerApp(QMainWindow):
             for p in self.photos:
                 p.clear()
             self.photos.clear()
-            self.current_page = 0
+            self._photos_displayed = 0
             self._update_view()
-
-    def _prev_page(self) -> None:
-        """Previous page"""
-        if self.current_page > 0:
-            self.current_page -= 1
-            self._refresh_grid()
-
-    def _next_page(self) -> None:
-        """Next page"""
-        max_page = max(0, (len(self.photos) - 1) // PHOTOS_PER_VIEW)
-        if self.current_page < max_page:
-            self.current_page += 1
-            self._refresh_grid()
 
     def _update_view(self) -> None:
         """Update the display"""
         self.count_label.setText(str(len(self.photos)))
+        self._update_loaded_label()
         self._refresh_grid()
+
+    def _update_loaded_label(self) -> None:
+        """Update the loaded photos label"""
+        if not self.photos:
+            self.loaded_label.setText("")
+        else:
+            displayed = min(self._photos_displayed, len(self.photos))
+            total = len(self.photos)
+            if displayed < total:
+                self.loaded_label.setText(f"{displayed} / {total}")
+            else:
+                self.loaded_label.setText(f"{total} photos")
 
     def _calculate_columns(self) -> int:
         """Calculate number of columns based on available width"""
-        # Get available width from the scroll area (use width minus scrollbar)
-        scroll_area = self.grid_container.scroll_area
-        scrollbar_width = scroll_area.verticalScrollBar().width() if scroll_area.verticalScrollBar().isVisible() else 0
-        scroll_width = scroll_area.width() - scrollbar_width - 2  # -2 for borders
+        # Get available width from the scroll area
+        scrollbar_width = self.scroll_area.verticalScrollBar().width() if self.scroll_area.verticalScrollBar().isVisible() else 0
+        scroll_width = self.scroll_area.width() - scrollbar_width - 2
 
         # Card dimensions and spacing
         card_width = 180
         spacing = 16
-        margins = 16  # 8 on each side from grid_layout
+        margins = 16
 
         # Calculate how many cards fit
         available = scroll_width - margins
         if available <= 0:
             return 1
 
-        # Each card needs card_width + spacing (except the last one)
         cols = max(1, (available + spacing) // (card_width + spacing))
         return cols
 
@@ -535,33 +584,35 @@ class PhotoManagerApp(QMainWindow):
                 item.widget().deleteLater()
 
         if not self.photos:
-            self.page_label.setText("0 / 0")
-            self.grid_container.update_zones_visibility(False, False)
+            self.load_more_btn.hide()
+            self.loaded_label.setText("")
             return
 
-        # Pagination
-        total_pages = math.ceil(len(self.photos) / PHOTOS_PER_VIEW)
-        self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
+        # Update loaded label
+        self._update_loaded_label()
 
-        # Update zones visibility
-        can_prev = self.current_page > 0
-        can_next = self.current_page < total_pages - 1
-        self.grid_container.update_zones_visibility(can_prev, can_next)
-
-        start = self.current_page * PHOTOS_PER_VIEW
-        end = min(start + PHOTOS_PER_VIEW, len(self.photos))
-
-        # Calculate columns dynamically based on window size
+        # Calculate columns dynamically
         cols = self._calculate_columns()
 
-        for i, idx in enumerate(range(start, end)):
+        # Display photos up to _photos_displayed
+        displayed = min(self._photos_displayed, len(self.photos))
+
+        for i in range(displayed):
             card = PhotoCard(
-                self.photos[idx], idx,
+                self.photos[i], i,
                 self._delete_photo, self._rotate_photo,
                 self._move_photo
             )
             self.grid_layout.addWidget(card, i // cols, i % cols)
             self._cards.append(card)
+
+        # Show/hide load more button
+        if displayed < len(self.photos):
+            remaining = len(self.photos) - displayed
+            self.load_more_btn.setText(f"{tr('load_more')} ({remaining})")
+            self.load_more_btn.show()
+        else:
+            self.load_more_btn.hide()
 
     def _export(self) -> None:
         """Start Word export"""
@@ -619,12 +670,12 @@ class PhotoManagerApp(QMainWindow):
     def resizeEvent(self, event) -> None:
         """Handle window resize - refresh grid to adapt columns"""
         super().resizeEvent(event)
-        # Use a timer to debounce resize events and ensure correct sizing
+        # Use a timer to debounce resize events
         if not hasattr(self, '_resize_timer'):
             self._resize_timer = QTimer()
             self._resize_timer.setSingleShot(True)
             self._resize_timer.timeout.connect(self._on_resize_done)
-        self._resize_timer.start(100)  # Wait 100ms after last resize
+        self._resize_timer.start(100)
 
     def _on_resize_done(self) -> None:
         """Called after resize is complete"""

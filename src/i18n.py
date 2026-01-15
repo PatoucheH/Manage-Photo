@@ -145,6 +145,10 @@ class Translations:
             "en": "View",
             "fr": "Voir"
         },
+        "load_more": {
+            "en": "Load more",
+            "fr": "Charger plus"
+        },
 
         # Language
         "language": {

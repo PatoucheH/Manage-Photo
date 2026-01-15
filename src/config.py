@@ -6,9 +6,6 @@ SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG')
 # Thumbnail size in pixels
 THUMB_SIZE = (100, 100)
 
-# Number of photos per view (pagination)
-PHOTOS_PER_VIEW = 50
-
 
 class WordExportConfig:
     """Word export configuration"""
