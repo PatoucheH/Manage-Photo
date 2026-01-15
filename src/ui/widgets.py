@@ -6,13 +6,87 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea
 )
 from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap, QCursor
+from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap, QCursor, QPainter, QLinearGradient, QPolygon
 
 from ..models import PhotoItem
 from ..i18n import tr
 from .dialogs import ImageViewerDialog
 from .styles import Colors, SYSTEM_FONT
 import sip
+
+
+class ScrollZoneIndicator(QWidget):
+    """Visual indicator for scroll zones during drag"""
+
+    def __init__(self, direction: str, parent=None):
+        super().__init__(parent)
+        self.direction = direction  # "up" or "down"
+        self.active = False
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.hide()
+
+    def set_active(self, active: bool):
+        """Set whether this zone is being hovered"""
+        self.active = active
+        self.update()
+
+    def paintEvent(self, event):
+        """Draw the scroll zone indicator"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect()
+
+        # Create gradient
+        if self.direction == "up":
+            gradient = QLinearGradient(0, 0, 0, rect.height())
+            if self.active:
+                gradient.setColorAt(0, QColor(99, 102, 241, 150))
+                gradient.setColorAt(1, QColor(99, 102, 241, 0))
+            else:
+                gradient.setColorAt(0, QColor(99, 102, 241, 80))
+                gradient.setColorAt(1, QColor(99, 102, 241, 0))
+        else:
+            gradient = QLinearGradient(0, 0, 0, rect.height())
+            if self.active:
+                gradient.setColorAt(0, QColor(99, 102, 241, 0))
+                gradient.setColorAt(1, QColor(99, 102, 241, 150))
+            else:
+                gradient.setColorAt(0, QColor(99, 102, 241, 0))
+                gradient.setColorAt(1, QColor(99, 102, 241, 80))
+
+        painter.fillRect(rect, gradient)
+
+        # Draw arrow
+        painter.setPen(Qt.NoPen)
+        if self.active:
+            painter.setBrush(QColor(255, 255, 255, 200))
+        else:
+            painter.setBrush(QColor(255, 255, 255, 120))
+
+        center_x = rect.width() // 2
+        arrow_size = 12
+
+        if self.direction == "up":
+            # Arrow pointing up
+            center_y = rect.height() // 3
+            points = [
+                QPoint(center_x, center_y - arrow_size),
+                QPoint(center_x - arrow_size, center_y + arrow_size // 2),
+                QPoint(center_x + arrow_size, center_y + arrow_size // 2)
+            ]
+        else:
+            # Arrow pointing down
+            center_y = rect.height() * 2 // 3
+            points = [
+                QPoint(center_x, center_y + arrow_size),
+                QPoint(center_x - arrow_size, center_y - arrow_size // 2),
+                QPoint(center_x + arrow_size, center_y - arrow_size // 2)
+            ]
+
+        painter.drawPolygon(QPolygon(points))
+
+        painter.end()
 
 
 class AutoScrollArea(QScrollArea):
@@ -27,13 +101,34 @@ class AutoScrollArea(QScrollArea):
         self._scroll_timer.setInterval(30)  # Smooth scrolling
         self._scroll_timer.timeout.connect(self._do_auto_scroll)
         self._scroll_speed = 0
-        self._scroll_margin = 60  # Pixels from edge to trigger scroll
+        self._scroll_margin = 80  # Pixels from edge to trigger scroll
+
+        # Visual indicators
+        self._top_indicator = ScrollZoneIndicator("up", self)
+        self._bottom_indicator = ScrollZoneIndicator("down", self)
+
+    def resizeEvent(self, event):
+        """Reposition indicators on resize"""
+        super().resizeEvent(event)
+        self._update_indicator_positions()
+
+    def _update_indicator_positions(self):
+        """Update indicator positions"""
+        width = self.width()
+        self._top_indicator.setGeometry(0, 0, width, self._scroll_margin)
+        self._bottom_indicator.setGeometry(0, self.height() - self._scroll_margin, width, self._scroll_margin)
 
     def dragEnterEvent(self, event):
         """Accept drag and start auto-scroll detection"""
         if event.mimeData().hasText():
             event.acceptProposedAction()
             self._scroll_timer.start()
+            self._update_indicator_positions()
+            # Show indicators
+            self._top_indicator.show()
+            self._bottom_indicator.show()
+            self._top_indicator.raise_()
+            self._bottom_indicator.raise_()
         else:
             event.ignore()
 
@@ -47,13 +142,19 @@ class AutoScrollArea(QScrollArea):
             if pos.y() < self._scroll_margin:
                 # Near top - scroll up
                 distance = self._scroll_margin - pos.y()
-                self._scroll_speed = -int(distance / 3)
+                self._scroll_speed = -max(5, int(distance / 2))
+                self._top_indicator.set_active(True)
+                self._bottom_indicator.set_active(False)
             elif pos.y() > self.height() - self._scroll_margin:
                 # Near bottom - scroll down
                 distance = pos.y() - (self.height() - self._scroll_margin)
-                self._scroll_speed = int(distance / 3)
+                self._scroll_speed = max(5, int(distance / 2))
+                self._top_indicator.set_active(False)
+                self._bottom_indicator.set_active(True)
             else:
                 self._scroll_speed = 0
+                self._top_indicator.set_active(False)
+                self._bottom_indicator.set_active(False)
         else:
             event.ignore()
 
@@ -61,11 +162,15 @@ class AutoScrollArea(QScrollArea):
         """Stop auto-scroll when drag leaves"""
         self._scroll_timer.stop()
         self._scroll_speed = 0
+        self._top_indicator.hide()
+        self._bottom_indicator.hide()
 
     def dropEvent(self, event):
         """Stop auto-scroll on drop"""
         self._scroll_timer.stop()
         self._scroll_speed = 0
+        self._top_indicator.hide()
+        self._bottom_indicator.hide()
         event.ignore()  # Let child widgets handle the drop
 
     def _do_auto_scroll(self):
