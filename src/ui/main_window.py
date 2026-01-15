@@ -59,10 +59,11 @@ class PhotoManagerApp(QMainWindow):
 
     def _setup_sidebar(self, parent_layout: QHBoxLayout) -> None:
         """Setup the sidebar"""
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(280)
-        sidebar.setStyleSheet(Styles.get_sidebar_style())
+        # Outer container for the sidebar (fixed width, holds scroll area)
+        sidebar_outer = QFrame()
+        sidebar_outer.setObjectName("sidebar")
+        sidebar_outer.setFixedWidth(280)
+        sidebar_outer.setStyleSheet(Styles.get_sidebar_style())
 
         # Shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -70,10 +71,34 @@ class PhotoManagerApp(QMainWindow):
         shadow.setXOffset(0)
         shadow.setYOffset(4)
         shadow.setColor(QColor(0, 0, 0, 60))
-        sidebar.setGraphicsEffect(shadow)
+        sidebar_outer.setGraphicsEffect(shadow)
+
+        # Layout for the outer container
+        outer_layout = QVBoxLayout(sidebar_outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # Scroll area for sidebar content
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sidebar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        sidebar_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollArea > QWidget > QWidget {{
+                background: transparent;
+            }}
+        """)
+
+        # Inner widget that contains all sidebar content
+        sidebar = QWidget()
+        sidebar.setStyleSheet("background: transparent;")
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(24, 28, 24, 28)
+        layout.setContentsMargins(24, 28, 24, 16)  # Less bottom margin since footer is outside
         layout.setSpacing(8)
 
         # Logo / Title
@@ -225,12 +250,15 @@ class PhotoManagerApp(QMainWindow):
         self.clear_btn.clicked.connect(self._clear)
         layout.addWidget(self.clear_btn)
 
-        layout.addStretch()
+        # Add sidebar content to scroll area (NO stretch - let content have natural height)
+        sidebar_scroll.setWidget(sidebar)
+        outer_layout.addWidget(sidebar_scroll, 1)  # stretch factor 1 to fill available space
 
-        # Footer with language toggle and formats
+        # Footer stays at bottom, outside scroll area
         footer_container = QWidget()
+        footer_container.setStyleSheet("background: transparent;")
         footer_layout = QVBoxLayout(footer_container)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setContentsMargins(24, 12, 24, 20)
         footer_layout.setSpacing(8)
 
         # Language toggle (small, in footer)
@@ -265,9 +293,9 @@ class PhotoManagerApp(QMainWindow):
         self.footer_label.setAlignment(Qt.AlignCenter)
         footer_layout.addWidget(self.footer_label)
 
-        layout.addWidget(footer_container)
+        outer_layout.addWidget(footer_container)
 
-        parent_layout.addWidget(sidebar)
+        parent_layout.addWidget(sidebar_outer)
 
     def _add_separator(self, layout: QVBoxLayout) -> None:
         """Add a horizontal separator"""

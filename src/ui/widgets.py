@@ -24,7 +24,8 @@ class PageChangeIndicator(QWidget):
         super().__init__(parent)
         self.direction = direction  # "prev" or "next"
         self.progress = 0.0  # 0.0 to 1.0
-        self.active = False
+        self.active = False  # True when drag is hovering over this zone
+        self.enabled = False  # True when page change is possible
         self.timer = QTimer(self)
         self.timer.setInterval(50)  # Update every 50ms
         self.timer.timeout.connect(self._update_progress)
@@ -33,25 +34,31 @@ class PageChangeIndicator(QWidget):
 
         self.setAcceptDrops(True)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        self.hide()
+        # Don't hide - we want to be visible when enabled
+
+    def set_enabled(self, enabled: bool):
+        """Enable or disable this zone (based on whether page change is possible)"""
+        self.enabled = enabled
+        self.setAcceptDrops(enabled)
+        if not enabled:
+            self.deactivate()
+        self.update()
 
     def activate(self):
-        """Start the progress timer"""
-        if not self.active:
+        """Start the progress timer (when drag enters)"""
+        if not self.active and self.enabled:
             self.active = True
             self.progress = 0.0
             self.elapsed = 0
             self.timer.start()
-            self.show()
             self.update()
 
     def deactivate(self):
-        """Stop and reset"""
+        """Stop and reset (when drag leaves)"""
         self.active = False
         self.timer.stop()
         self.progress = 0.0
         self.elapsed = 0
-        self.hide()
         self.update()
 
     def _update_progress(self):
@@ -74,39 +81,51 @@ class PageChangeIndicator(QWidget):
 
         rect = self.rect()
 
-        # Background
+        # If not enabled, draw nothing (transparent)
+        if not self.enabled:
+            painter.end()
+            return
+
+        # Background - subtle when enabled, more visible when active
         bg_color = QColor(Colors.PRIMARY)
-        bg_color.setAlpha(40 + int(60 * self.progress))
+        if self.active:
+            bg_color.setAlpha(40 + int(60 * self.progress))
+        else:
+            bg_color.setAlpha(20)  # Very subtle when just enabled
         painter.fillRect(rect, bg_color)
 
-        # Progress bar on the edge
-        progress_color = QColor(Colors.PRIMARY)
-        progress_color.setAlpha(180)
-        painter.setBrush(QBrush(progress_color))
-        painter.setPen(Qt.NoPen)
+        # Progress bar on the edge (only when active)
+        if self.active:
+            progress_color = QColor(Colors.PRIMARY)
+            progress_color.setAlpha(180)
+            painter.setBrush(QBrush(progress_color))
+            painter.setPen(Qt.NoPen)
 
+            if self.direction == "prev":
+                # Progress bar on left edge
+                bar_width = 6
+                bar_height = int(rect.height() * self.progress)
+                bar_y = (rect.height() - bar_height) // 2
+                painter.drawRoundedRect(2, bar_y, bar_width, bar_height, 3, 3)
+            else:
+                # Progress bar on right edge
+                bar_width = 6
+                bar_height = int(rect.height() * self.progress)
+                bar_y = (rect.height() - bar_height) // 2
+                painter.drawRoundedRect(rect.width() - bar_width - 2, bar_y, bar_width, bar_height, 3, 3)
+
+        # Arrow icon
         if self.direction == "prev":
-            # Progress bar on left edge
-            bar_width = 6
-            bar_height = int(rect.height() * self.progress)
-            bar_y = (rect.height() - bar_height) // 2
-            painter.drawRoundedRect(2, bar_y, bar_width, bar_height, 3, 3)
-
-            # Arrow icon
             self._draw_arrow(painter, rect, "left")
         else:
-            # Progress bar on right edge
-            bar_width = 6
-            bar_height = int(rect.height() * self.progress)
-            bar_y = (rect.height() - bar_height) // 2
-            painter.drawRoundedRect(rect.width() - bar_width - 2, bar_y, bar_width, bar_height, 3, 3)
-
-            # Arrow icon
             self._draw_arrow(painter, rect, "right")
 
         # Text label
         text_color = QColor(Colors.TEXT_PRIMARY)
-        text_color.setAlpha(150 + int(105 * self.progress))
+        if self.active:
+            text_color.setAlpha(150 + int(105 * self.progress))
+        else:
+            text_color.setAlpha(80)  # Subtle when just enabled
         painter.setPen(QPen(text_color))
         font = QFont(SYSTEM_FONT, 10, QFont.Bold)
         painter.setFont(font)
@@ -121,7 +140,10 @@ class PageChangeIndicator(QWidget):
     def _draw_arrow(self, painter, rect, direction):
         """Draw arrow indicator"""
         arrow_color = QColor(Colors.TEXT_PRIMARY)
-        arrow_color.setAlpha(100 + int(155 * self.progress))
+        if self.active:
+            arrow_color.setAlpha(100 + int(155 * self.progress))
+        else:
+            arrow_color.setAlpha(60)  # Subtle when just enabled
         painter.setPen(QPen(arrow_color, 3))
 
         center_y = rect.height() // 2
@@ -137,7 +159,7 @@ class PageChangeIndicator(QWidget):
             painter.drawLine(x, center_y, x - arrow_size, center_y + arrow_size)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasText():
+        if self.enabled and event.mimeData().hasText():
             event.acceptProposedAction()
             self.activate()
 
@@ -217,18 +239,9 @@ class PhotoGridContainer(QWidget):
         self.can_go_prev = lambda: can_prev
         self.can_go_next = lambda: can_next
 
-        # Update zone enabled state
-        if can_prev:
-            self.prev_zone.setAcceptDrops(True)
-        else:
-            self.prev_zone.setAcceptDrops(False)
-            self.prev_zone.deactivate()
-
-        if can_next:
-            self.next_zone.setAcceptDrops(True)
-        else:
-            self.next_zone.setAcceptDrops(False)
-            self.next_zone.deactivate()
+        # Update zone enabled state using the new set_enabled method
+        self.prev_zone.set_enabled(can_prev)
+        self.next_zone.set_enabled(can_next)
 
 
 class PhotoCard(QFrame):
