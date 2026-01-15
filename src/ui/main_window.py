@@ -16,7 +16,7 @@ from ..models import PhotoItem
 from ..config import SUPPORTED_FORMATS
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
-from .widgets import PhotoCard
+from .widgets import PhotoCard, AutoScrollArea
 from .styles import Styles, Colors, SYSTEM_FONT
 
 # Number of photos to load at a time
@@ -152,33 +152,36 @@ class PhotoManagerApp(QMainWindow):
 
         layout.addSpacing(16)
 
-        # Photo counter
+        # Photo counter (single line)
         self.count_container = QFrame()
-        self.count_container.setMinimumHeight(90)
-        self.count_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.count_container.setMinimumHeight(60)
+        self.count_container.setMaximumHeight(60)
+        self.count_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.count_container.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BG_DARK};
                 border-radius: 10px;
-                padding: 8px;
             }}
         """)
-        count_layout = QVBoxLayout(self.count_container)
-        count_layout.setContentsMargins(16, 12, 16, 12)
+        count_layout = QHBoxLayout(self.count_container)
+        count_layout.setContentsMargins(16, 8, 16, 8)
+        count_layout.setSpacing(8)
+
+        count_layout.addStretch()
 
         self.count_label = QLabel("0")
-        self.count_label.setFont(QFont(SYSTEM_FONT, 32, QFont.Bold))
+        self.count_label.setFont(QFont(SYSTEM_FONT, 28, QFont.Bold))
         self.count_label.setStyleSheet(f"color: {Colors.PRIMARY};")
-        self.count_label.setAlignment(Qt.AlignCenter)
-        self.count_label.setMinimumHeight(40)
+        self.count_label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         count_layout.addWidget(self.count_label)
 
         self.count_text = QLabel(tr("photos"))
         self.count_text.setFont(QFont(SYSTEM_FONT, 14))
         self.count_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
-        self.count_text.setAlignment(Qt.AlignCenter)
-        self.count_text.setMinimumHeight(20)
+        self.count_text.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         count_layout.addWidget(self.count_text)
+
+        count_layout.addStretch()
 
         layout.addWidget(self.count_container)
         layout.addSpacing(20)
@@ -343,8 +346,8 @@ class PhotoManagerApp(QMainWindow):
 
         content_layout.addLayout(header)
 
-        # Scroll area for photo grid
-        self.scroll_area = QScrollArea()
+        # Scroll area for photo grid (with auto-scroll during drag)
+        self.scroll_area = AutoScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)

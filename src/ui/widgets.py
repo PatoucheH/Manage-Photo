@@ -3,16 +3,76 @@
 from typing import Callable, Optional
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGraphicsDropShadowEffect, QWidget, QApplication
+    QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea
 )
-from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap
+from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QTimer
+from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap, QCursor
 
 from ..models import PhotoItem
 from ..i18n import tr
 from .dialogs import ImageViewerDialog
 from .styles import Colors, SYSTEM_FONT
 import sip
+
+
+class AutoScrollArea(QScrollArea):
+    """QScrollArea that auto-scrolls when dragging near edges"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+        # Auto-scroll settings
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setInterval(30)  # Smooth scrolling
+        self._scroll_timer.timeout.connect(self._do_auto_scroll)
+        self._scroll_speed = 0
+        self._scroll_margin = 60  # Pixels from edge to trigger scroll
+
+    def dragEnterEvent(self, event):
+        """Accept drag and start auto-scroll detection"""
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            self._scroll_timer.start()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Update scroll direction based on cursor position"""
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            pos = event.pos()
+
+            # Check if near top or bottom edge
+            if pos.y() < self._scroll_margin:
+                # Near top - scroll up
+                distance = self._scroll_margin - pos.y()
+                self._scroll_speed = -int(distance / 3)
+            elif pos.y() > self.height() - self._scroll_margin:
+                # Near bottom - scroll down
+                distance = pos.y() - (self.height() - self._scroll_margin)
+                self._scroll_speed = int(distance / 3)
+            else:
+                self._scroll_speed = 0
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Stop auto-scroll when drag leaves"""
+        self._scroll_timer.stop()
+        self._scroll_speed = 0
+
+    def dropEvent(self, event):
+        """Stop auto-scroll on drop"""
+        self._scroll_timer.stop()
+        self._scroll_speed = 0
+        event.ignore()  # Let child widgets handle the drop
+
+    def _do_auto_scroll(self):
+        """Perform the auto-scroll"""
+        if self._scroll_speed != 0:
+            scrollbar = self.verticalScrollBar()
+            scrollbar.setValue(scrollbar.value() + self._scroll_speed)
 
 
 class PhotoCard(QFrame):
