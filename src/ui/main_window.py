@@ -432,6 +432,20 @@ class PhotoManagerApp(QMainWindow):
         """Rotation callback"""
         pass
 
+    def _move_photo(self, from_index: int, to_index: int) -> None:
+        """Move a photo from one position to another"""
+        if from_index == to_index:
+            return
+        if not (0 <= from_index < len(self.photos) and 0 <= to_index < len(self.photos)):
+            return
+
+        # Remove photo from original position and insert at new position
+        photo = self.photos.pop(from_index)
+        self.photos.insert(to_index, photo)
+
+        # Refresh the grid
+        self._refresh_grid()
+
     def _clear(self) -> None:
         """Clear all photos"""
         if not self.photos:
@@ -503,7 +517,8 @@ class PhotoManagerApp(QMainWindow):
         for i, idx in enumerate(range(start, end)):
             card = PhotoCard(
                 self.photos[idx], idx,
-                self._delete_photo, self._rotate_photo
+                self._delete_photo, self._rotate_photo,
+                self._move_photo
             )
             self.grid_layout.addWidget(card, i // cols, i % cols)
             self._cards.append(card)
