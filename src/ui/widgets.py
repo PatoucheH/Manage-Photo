@@ -3,14 +3,231 @@
 from typing import Callable, Optional
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGraphicsDropShadowEffect, QWidget, QApplication
+    QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, QPoint, QMimeData, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QPainter, QPainterPath, QBrush, QDrag, QPixmap
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, QPoint, QMimeData, pyqtSignal, QTimer, QRect
+from PyQt5.QtGui import QFont, QColor, QPainter, QPainterPath, QBrush, QDrag, QPixmap, QPen
 
 from ..models import PhotoItem
+from ..i18n import tr
 from .dialogs import ImageViewerDialog
 from .styles import Colors, Styles
+
+
+class PageChangeIndicator(QWidget):
+    """Visual indicator for page change during drag"""
+
+    page_change_triggered = pyqtSignal(str)  # "prev" or "next"
+
+    def __init__(self, direction: str, parent=None):
+        super().__init__(parent)
+        self.direction = direction  # "prev" or "next"
+        self.progress = 0.0  # 0.0 to 1.0
+        self.active = False
+        self.timer = QTimer(self)
+        self.timer.setInterval(50)  # Update every 50ms
+        self.timer.timeout.connect(self._update_progress)
+        self.hold_time = 2000  # 2 seconds to trigger
+        self.elapsed = 0
+
+        self.setAcceptDrops(True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.hide()
+
+    def activate(self):
+        """Start the progress timer"""
+        if not self.active:
+            self.active = True
+            self.progress = 0.0
+            self.elapsed = 0
+            self.timer.start()
+            self.show()
+            self.update()
+
+    def deactivate(self):
+        """Stop and reset"""
+        self.active = False
+        self.timer.stop()
+        self.progress = 0.0
+        self.elapsed = 0
+        self.hide()
+        self.update()
+
+    def _update_progress(self):
+        """Update progress towards page change"""
+        self.elapsed += 50
+        self.progress = min(1.0, self.elapsed / self.hold_time)
+        self.update()
+
+        if self.progress >= 1.0:
+            self.timer.stop()
+            self.page_change_triggered.emit(self.direction)
+            self.progress = 0.0
+            self.elapsed = 0
+            self.update()
+
+    def paintEvent(self, event):
+        """Draw the indicator with progress"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect()
+
+        # Background
+        bg_color = QColor(Colors.PRIMARY)
+        bg_color.setAlpha(40 + int(60 * self.progress))
+        painter.fillRect(rect, bg_color)
+
+        # Progress bar on the edge
+        progress_color = QColor(Colors.PRIMARY)
+        progress_color.setAlpha(180)
+        painter.setBrush(QBrush(progress_color))
+        painter.setPen(Qt.NoPen)
+
+        if self.direction == "prev":
+            # Progress bar on left edge
+            bar_width = 6
+            bar_height = int(rect.height() * self.progress)
+            bar_y = (rect.height() - bar_height) // 2
+            painter.drawRoundedRect(2, bar_y, bar_width, bar_height, 3, 3)
+
+            # Arrow icon
+            self._draw_arrow(painter, rect, "left")
+        else:
+            # Progress bar on right edge
+            bar_width = 6
+            bar_height = int(rect.height() * self.progress)
+            bar_y = (rect.height() - bar_height) // 2
+            painter.drawRoundedRect(rect.width() - bar_width - 2, bar_y, bar_width, bar_height, 3, 3)
+
+            # Arrow icon
+            self._draw_arrow(painter, rect, "right")
+
+        # Text label
+        text_color = QColor(Colors.TEXT_PRIMARY)
+        text_color.setAlpha(150 + int(105 * self.progress))
+        painter.setPen(QPen(text_color))
+        font = QFont("Segoe UI", 10, QFont.Bold)
+        painter.setFont(font)
+
+        if self.direction == "prev":
+            painter.drawText(rect, Qt.AlignCenter, "Page\nprécédente")
+        else:
+            painter.drawText(rect, Qt.AlignCenter, "Page\nsuivante")
+
+        painter.end()
+
+    def _draw_arrow(self, painter, rect, direction):
+        """Draw arrow indicator"""
+        arrow_color = QColor(Colors.TEXT_PRIMARY)
+        arrow_color.setAlpha(100 + int(155 * self.progress))
+        painter.setPen(QPen(arrow_color, 3))
+
+        center_y = rect.height() // 2
+        arrow_size = 15
+
+        if direction == "left":
+            x = 20
+            painter.drawLine(x + arrow_size, center_y - arrow_size, x, center_y)
+            painter.drawLine(x, center_y, x + arrow_size, center_y + arrow_size)
+        else:
+            x = rect.width() - 20
+            painter.drawLine(x - arrow_size, center_y - arrow_size, x, center_y)
+            painter.drawLine(x, center_y, x - arrow_size, center_y + arrow_size)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            self.activate()
+
+    def dragLeaveEvent(self, event):
+        self.deactivate()
+
+    def dropEvent(self, event):
+        # Don't actually drop here, just trigger page change if ready
+        self.deactivate()
+        event.ignore()
+
+
+class PhotoGridContainer(QWidget):
+    """Container for photo grid with page change drop zones"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+
+        # Callbacks
+        self.on_prev_page = None
+        self.on_next_page = None
+        self.can_go_prev = lambda: False
+        self.can_go_next = lambda: False
+
+    def _setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Left drop zone (previous page)
+        self.prev_zone = PageChangeIndicator("prev", self)
+        self.prev_zone.setFixedWidth(80)
+        self.prev_zone.page_change_triggered.connect(self._on_page_change)
+        layout.addWidget(self.prev_zone)
+
+        # Main scroll area
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # No horizontal scroll
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {Colors.BG_DARK};
+                border: none;
+                border-radius: 12px;
+            }}
+        """)
+        self.scroll_area.setAcceptDrops(True)
+        layout.addWidget(self.scroll_area, 1)
+
+        # Right drop zone (next page)
+        self.next_zone = PageChangeIndicator("next", self)
+        self.next_zone.setFixedWidth(80)
+        self.next_zone.page_change_triggered.connect(self._on_page_change)
+        layout.addWidget(self.next_zone)
+
+    def set_grid_widget(self, widget):
+        """Set the grid widget inside the scroll area"""
+        self.scroll_area.setWidget(widget)
+
+    def _on_page_change(self, direction):
+        """Handle page change trigger"""
+        if direction == "prev" and self.on_prev_page and self.can_go_prev():
+            self.on_prev_page()
+            # Keep zone active if still possible to go back
+            if self.can_go_prev():
+                self.prev_zone.activate()
+        elif direction == "next" and self.on_next_page and self.can_go_next():
+            self.on_next_page()
+            # Keep zone active if still possible to go forward
+            if self.can_go_next():
+                self.next_zone.activate()
+
+    def update_zones_visibility(self, can_prev, can_next):
+        """Update which zones should be visible during drag"""
+        self.can_go_prev = lambda: can_prev
+        self.can_go_next = lambda: can_next
+
+        # Update zone enabled state
+        if can_prev:
+            self.prev_zone.setAcceptDrops(True)
+        else:
+            self.prev_zone.setAcceptDrops(False)
+            self.prev_zone.deactivate()
+
+        if can_next:
+            self.next_zone.setAcceptDrops(True)
+        else:
+            self.next_zone.setAcceptDrops(False)
+            self.next_zone.deactivate()
 
 
 class PhotoCard(QFrame):
@@ -45,7 +262,7 @@ class PhotoCard(QFrame):
     def _setup_ui(self) -> None:
         """Setup the card interface"""
         self.setObjectName("photoCard")
-        self.setFixedSize(180, 230)  # Larger card with 2 button rows
+        self.setFixedSize(180, 255)  # Larger card with bigger buttons
         self.setCursor(Qt.OpenHandCursor)  # Indicate draggable
 
         # Base style
@@ -102,29 +319,27 @@ class PhotoCard(QFrame):
         # Action buttons container
         btn_container = QVBoxLayout()
         btn_container.setSpacing(6)
-        btn_container.setContentsMargins(0, 0, 0, 0)
+        btn_container.setContentsMargins(0, 8, 0, 0)  # margin-top of 8px
 
-        # Common button style
-        btn_style = f"""
+        # View button - full width on its own row
+        view_btn = QPushButton(tr("view"))
+        view_btn.setFixedHeight(40)
+        view_btn.setCursor(Qt.PointingHandCursor)
+        view_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.BG_DARK};
                 color: {Colors.TEXT_PRIMARY};
                 border: none;
                 border-radius: 8px;
+                font-size: 18px;
                 font-weight: bold;
+                font-family: "Segoe UI";
             }}
             QPushButton:hover {{
                 background: {Colors.PRIMARY};
                 color: white;
             }}
-        """
-
-        # View button - full width on its own row
-        view_btn = QPushButton("Voir")
-        view_btn.setFixedHeight(32)
-        view_btn.setCursor(Qt.PointingHandCursor)
-        view_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        view_btn.setStyleSheet(btn_style)
+        """)
         view_btn.clicked.connect(self._show_full_image)
         btn_container.addWidget(view_btn)
 
@@ -133,26 +348,40 @@ class PhotoCard(QFrame):
         btn_row2.setSpacing(6)
         btn_row2.setContentsMargins(0, 0, 0, 0)
 
-        # Rotate button
+        # Rotate button - large icon
         rotate_btn = QPushButton("↻")
-        rotate_btn.setFixedHeight(32)
+        rotate_btn.setFixedHeight(40)
         rotate_btn.setCursor(Qt.PointingHandCursor)
-        rotate_btn.setFont(QFont("Segoe UI", 14))
-        rotate_btn.setStyleSheet(btn_style)
+        rotate_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.BG_DARK};
+                color: {Colors.TEXT_PRIMARY};
+                border: none;
+                border-radius: 8px;
+                font-size: 28px;
+                font-family: "Segoe UI";
+            }}
+            QPushButton:hover {{
+                background: {Colors.PRIMARY};
+                color: white;
+            }}
+        """)
         rotate_btn.clicked.connect(self._rotate)
         btn_row2.addWidget(rotate_btn, 1)  # stretch factor 1
 
-        # Delete button
+        # Delete button - large icon
         delete_btn = QPushButton("×")
-        delete_btn.setFixedHeight(32)
+        delete_btn.setFixedHeight(40)
         delete_btn.setCursor(Qt.PointingHandCursor)
-        delete_btn.setFont(QFont("Segoe UI", 16, QFont.Bold))
         delete_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.BG_DARK};
                 color: {Colors.DANGER};
                 border: none;
                 border-radius: 8px;
+                font-size: 32px;
+                font-weight: bold;
+                font-family: "Segoe UI";
             }}
             QPushButton:hover {{
                 background: {Colors.DANGER};

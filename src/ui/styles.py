@@ -215,7 +215,7 @@ class Styles:
                 border: none;
                 border-radius: 10px;
                 padding: 14px 20px;
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: 600;
             }}
             QPushButton:hover {{
@@ -236,7 +236,8 @@ class Styles:
                 color: {Colors.DANGER};
                 border: 1px solid {Colors.DANGER};
                 border-radius: 8px;
-                padding: 8px 16px;
+                padding: 10px 16px;
+                font-size: 14px;
                 font-weight: 500;
             }}
             QPushButton:hover {{
@@ -254,7 +255,8 @@ class Styles:
                 color: white;
                 border: none;
                 border-radius: 8px;
-                padding: 10px 16px;
+                padding: 12px 16px;
+                font-size: 14px;
                 font-weight: 500;
             }}
             QPushButton:hover {{

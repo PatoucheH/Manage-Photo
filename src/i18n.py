@@ -141,6 +141,10 @@ class Translations:
             "en": "Error",
             "fr": "Erreur"
         },
+        "view": {
+            "en": "View",
+            "fr": "Voir"
+        },
 
         # Language
         "language": {

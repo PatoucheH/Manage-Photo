@@ -10,14 +10,14 @@ from PyQt5.QtWidgets import (
     QGridLayout, QFileDialog, QMessageBox, QProgressDialog, QFrame,
     QGraphicsDropShadowEffect, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 from PyQt5.QtGui import QFont, QColor
 
 from ..models import PhotoItem
 from ..config import SUPPORTED_FORMATS, PHOTOS_PER_VIEW
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
-from .widgets import PhotoCard
+from .widgets import PhotoCard, PhotoGridContainer
 from .styles import Styles, Colors
 
 
@@ -83,13 +83,13 @@ class PhotoManagerApp(QMainWindow):
         title_layout.setSpacing(4)
 
         self.title_label = QLabel(tr("app_title"))
-        self.title_label.setFont(QFont("Segoe UI", 22, QFont.Bold))
+        self.title_label.setFont(QFont("Segoe UI", 26, QFont.Bold))
         self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         self.title_label.setAlignment(Qt.AlignCenter)
         title_layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(tr("app_subtitle"))
-        self.subtitle_label.setFont(QFont("Segoe UI", 11))
+        self.subtitle_label.setFont(QFont("Segoe UI", 13))
         self.subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.subtitle_label.setAlignment(Qt.AlignCenter)
         title_layout.addWidget(self.subtitle_label)
@@ -103,7 +103,7 @@ class PhotoManagerApp(QMainWindow):
 
         # Add section
         self.add_section_label = QLabel(tr("add_photos"))
-        self.add_section_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self.add_section_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.add_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
         layout.addWidget(self.add_section_label)
         layout.addSpacing(12)
@@ -135,13 +135,13 @@ class PhotoManagerApp(QMainWindow):
         count_layout.setContentsMargins(16, 12, 16, 12)
 
         self.count_label = QLabel("0")
-        self.count_label.setFont(QFont("Segoe UI", 28, QFont.Bold))
+        self.count_label.setFont(QFont("Segoe UI", 32, QFont.Bold))
         self.count_label.setStyleSheet(f"color: {Colors.PRIMARY};")
         self.count_label.setAlignment(Qt.AlignCenter)
         count_layout.addWidget(self.count_label)
 
         self.count_text = QLabel(tr("photos"))
-        self.count_text.setFont(QFont("Segoe UI", 11))
+        self.count_text.setFont(QFont("Segoe UI", 14))
         self.count_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.count_text.setAlignment(Qt.AlignCenter)
         count_layout.addWidget(self.count_text)
@@ -155,7 +155,7 @@ class PhotoManagerApp(QMainWindow):
 
         # Photos per page
         self.ppp_section_label = QLabel(tr("photos_per_page"))
-        self.ppp_section_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self.ppp_section_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.ppp_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
         layout.addWidget(self.ppp_section_label)
         layout.addSpacing(8)
@@ -170,23 +170,23 @@ class PhotoManagerApp(QMainWindow):
         """)
         radio_layout = QVBoxLayout(radio_container)
         radio_layout.setContentsMargins(16, 12, 16, 12)
-        radio_layout.setSpacing(4)
+        radio_layout.setSpacing(6)
 
         self.radio_4 = QRadioButton(tr("photos_layout_4"))
-        self.radio_4.setFont(QFont("Segoe UI", 11))
+        self.radio_4.setFont(QFont("Segoe UI", 13))
         self.radio_4.setCursor(Qt.PointingHandCursor)
         self.ppp_group.addButton(self.radio_4, 4)
         radio_layout.addWidget(self.radio_4)
 
         self.radio_6 = QRadioButton(tr("photos_layout_6"))
-        self.radio_6.setFont(QFont("Segoe UI", 11))
+        self.radio_6.setFont(QFont("Segoe UI", 13))
         self.radio_6.setCursor(Qt.PointingHandCursor)
         self.radio_6.setChecked(True)
         self.ppp_group.addButton(self.radio_6, 6)
         radio_layout.addWidget(self.radio_6)
 
         self.radio_9 = QRadioButton(tr("photos_layout_9"))
-        self.radio_9.setFont(QFont("Segoe UI", 11))
+        self.radio_9.setFont(QFont("Segoe UI", 13))
         self.radio_9.setCursor(Qt.PointingHandCursor)
         self.ppp_group.addButton(self.radio_9, 9)
         radio_layout.addWidget(self.radio_9)
@@ -303,8 +303,9 @@ class PhotoManagerApp(QMainWindow):
         nav_layout.setContentsMargins(8, 6, 8, 6)
         nav_layout.setSpacing(8)
 
-        self.prev_btn = QPushButton("<")
-        self.prev_btn.setFixedSize(36, 36)
+        self.prev_btn = QPushButton("◀")
+        self.prev_btn.setFixedSize(44, 44)
+        self.prev_btn.setFont(QFont("Segoe UI", 16))
         self.prev_btn.setStyleSheet(Styles.get_nav_button_style())
         self.prev_btn.setCursor(Qt.PointingHandCursor)
         self.prev_btn.clicked.connect(self._prev_page)
@@ -317,8 +318,9 @@ class PhotoManagerApp(QMainWindow):
         self.page_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         nav_layout.addWidget(self.page_label)
 
-        self.next_btn = QPushButton(">")
-        self.next_btn.setFixedSize(36, 36)
+        self.next_btn = QPushButton("▶")
+        self.next_btn.setFixedSize(44, 44)
+        self.next_btn.setFont(QFont("Segoe UI", 16))
         self.next_btn.setStyleSheet(Styles.get_nav_button_style())
         self.next_btn.setCursor(Qt.PointingHandCursor)
         self.next_btn.clicked.connect(self._next_page)
@@ -327,18 +329,10 @@ class PhotoManagerApp(QMainWindow):
         header.addWidget(nav_container)
         content_layout.addLayout(header)
 
-        # Scroll area for photos
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet(f"""
-            QScrollArea {{
-                background-color: {Colors.BG_DARK};
-                border: none;
-                border-radius: 12px;
-            }}
-        """)
+        # Photo grid container with page change zones
+        self.grid_container = PhotoGridContainer()
+        self.grid_container.on_prev_page = self._prev_page
+        self.grid_container.on_next_page = self._next_page
 
         self.grid_widget = QWidget()
         self.grid_widget.setStyleSheet(f"background-color: {Colors.BG_DARK};")
@@ -347,8 +341,8 @@ class PhotoManagerApp(QMainWindow):
         self.grid_layout.setContentsMargins(8, 8, 8, 8)
         self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        self.scroll_area.setWidget(self.grid_widget)
-        content_layout.addWidget(self.scroll_area)
+        self.grid_container.set_grid_widget(self.grid_widget)
+        content_layout.addWidget(self.grid_container)
 
         parent_layout.addWidget(content, 1)
 
@@ -390,6 +384,10 @@ class PhotoManagerApp(QMainWindow):
 
         # Update language buttons
         self._update_language_buttons()
+
+        # Refresh grid to update card buttons text
+        if self.photos:
+            self._refresh_grid()
 
     def _add_folder(self) -> None:
         """Add all photos from a folder"""
@@ -483,6 +481,27 @@ class PhotoManagerApp(QMainWindow):
         self.count_label.setText(str(len(self.photos)))
         self._refresh_grid()
 
+    def _calculate_columns(self) -> int:
+        """Calculate number of columns based on available width"""
+        # Get available width from the scroll area (use width minus scrollbar)
+        scroll_area = self.grid_container.scroll_area
+        scrollbar_width = scroll_area.verticalScrollBar().width() if scroll_area.verticalScrollBar().isVisible() else 0
+        scroll_width = scroll_area.width() - scrollbar_width - 2  # -2 for borders
+
+        # Card dimensions and spacing
+        card_width = 180
+        spacing = 16
+        margins = 16  # 8 on each side from grid_layout
+
+        # Calculate how many cards fit
+        available = scroll_width - margins
+        if available <= 0:
+            return 1
+
+        # Each card needs card_width + spacing (except the last one)
+        cols = max(1, (available + spacing) // (card_width + spacing))
+        return cols
+
     def _refresh_grid(self) -> None:
         """Refresh the photo grid"""
         # Clean existing cards
@@ -499,6 +518,7 @@ class PhotoManagerApp(QMainWindow):
             self.page_label.setText("0 / 0")
             self.prev_btn.setEnabled(False)
             self.next_btn.setEnabled(False)
+            self.grid_container.update_zones_visibility(False, False)
             return
 
         # Pagination
@@ -506,13 +526,19 @@ class PhotoManagerApp(QMainWindow):
         self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
 
         # Enable/disable buttons
-        self.prev_btn.setEnabled(self.current_page > 0)
-        self.next_btn.setEnabled(self.current_page < total_pages - 1)
+        can_prev = self.current_page > 0
+        can_next = self.current_page < total_pages - 1
+        self.prev_btn.setEnabled(can_prev)
+        self.next_btn.setEnabled(can_next)
+
+        # Update drop zones for drag page change
+        self.grid_container.update_zones_visibility(can_prev, can_next)
 
         start = self.current_page * PHOTOS_PER_VIEW
         end = min(start + PHOTOS_PER_VIEW, len(self.photos))
 
-        cols = 5
+        # Calculate columns dynamically based on window size
+        cols = self._calculate_columns()
 
         for i, idx in enumerate(range(start, end)):
             card = PhotoCard(
@@ -575,6 +601,21 @@ class PhotoManagerApp(QMainWindow):
         """Export error"""
         progress.close()
         QMessageBox.critical(self, tr("export_error"), error)
+
+    def resizeEvent(self, event) -> None:
+        """Handle window resize - refresh grid to adapt columns"""
+        super().resizeEvent(event)
+        # Use a timer to debounce resize events and ensure correct sizing
+        if not hasattr(self, '_resize_timer'):
+            self._resize_timer = QTimer()
+            self._resize_timer.setSingleShot(True)
+            self._resize_timer.timeout.connect(self._on_resize_done)
+        self._resize_timer.start(100)  # Wait 100ms after last resize
+
+    def _on_resize_done(self) -> None:
+        """Called after resize is complete"""
+        if self.photos:
+            self._refresh_grid()
 
     def closeEvent(self, event) -> None:
         """Clean up on close"""
