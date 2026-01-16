@@ -401,7 +401,8 @@ class PhotoManagerApp(QMainWindow):
         self.load_more_btn.hide()  # Hidden by default
         container_layout.addWidget(self.load_more_btn)
 
-        container_layout.addStretch()
+        # Add spacing at bottom so load more button isn't covered by scroll zone indicator
+        container_layout.addSpacing(100)
 
         self.scroll_area.setWidget(self.grid_container)
         content_layout.addWidget(self.scroll_area)

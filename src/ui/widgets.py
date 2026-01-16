@@ -135,7 +135,8 @@ class AutoScrollArea(QScrollArea):
         self._scroll_timer.setInterval(30)  # Smooth scrolling
         self._scroll_timer.timeout.connect(self._do_auto_scroll)
         self._scroll_speed = 0
-        self._scroll_margin = 80  # Pixels from edge to trigger scroll
+        self._visual_margin = 80  # Visual indicator size
+        self._scroll_margin = 100  # Detection zone (larger than visual for better UX)
 
         # Visual indicators
         self._top_indicator = ScrollZoneIndicator("up", self)
@@ -169,10 +170,10 @@ class AutoScrollArea(QScrollArea):
         self._update_indicator_positions()
 
     def _update_indicator_positions(self):
-        """Update indicator positions"""
+        """Update indicator positions (visual size, detection is larger)"""
         width = self.width()
-        self._top_indicator.setGeometry(0, 0, width, self._scroll_margin)
-        self._bottom_indicator.setGeometry(0, self.height() - self._scroll_margin, width, self._scroll_margin)
+        self._top_indicator.setGeometry(0, 0, width, self._visual_margin)
+        self._bottom_indicator.setGeometry(0, self.height() - self._visual_margin, width, self._visual_margin)
 
     def dragEnterEvent(self, event):
         """Accept drag and start auto-scroll detection"""
@@ -187,7 +188,7 @@ class AutoScrollArea(QScrollArea):
             event.acceptProposedAction()
             pos = event.pos()
 
-            # Check if near top or bottom edge
+            # Check if near top or bottom edge (using larger detection zone)
             if pos.y() < self._scroll_margin:
                 # Near top - scroll up
                 distance = self._scroll_margin - pos.y()
