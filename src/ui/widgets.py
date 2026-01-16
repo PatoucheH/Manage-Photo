@@ -1,11 +1,11 @@
 """Custom widgets for the application"""
 
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea
 )
-from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QTimer, QObject
 from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap, QCursor, QPainter, QLinearGradient, QPolygon
 
 from ..models import PhotoItem
@@ -13,6 +13,40 @@ from ..i18n import tr
 from .dialogs import ImageViewerDialog
 from .styles import Colors, SYSTEM_FONT
 import sip
+
+
+class DragManager(QObject):
+    """Global drag state manager"""
+
+    drag_started = pyqtSignal()
+    drag_ended = pyqtSignal()
+
+    _instance = None
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = DragManager()
+        return cls._instance
+
+    def __init__(self):
+        super().__init__()
+        self._is_dragging = False
+
+    def start_drag(self):
+        """Called when a photo drag starts"""
+        if not self._is_dragging:
+            self._is_dragging = True
+            self.drag_started.emit()
+
+    def end_drag(self):
+        """Called when a photo drag ends"""
+        if self._is_dragging:
+            self._is_dragging = False
+            self.drag_ended.emit()
+
+    def is_dragging(self):
+        return self._is_dragging
 
 
 class ScrollZoneIndicator(QWidget):
@@ -107,6 +141,28 @@ class AutoScrollArea(QScrollArea):
         self._top_indicator = ScrollZoneIndicator("up", self)
         self._bottom_indicator = ScrollZoneIndicator("down", self)
 
+        # Connect to global drag manager
+        DragManager.instance().drag_started.connect(self._on_drag_started)
+        DragManager.instance().drag_ended.connect(self._on_drag_ended)
+
+    def _on_drag_started(self):
+        """Show indicators when any drag starts"""
+        self._update_indicator_positions()
+        self._top_indicator.show()
+        self._bottom_indicator.show()
+        self._top_indicator.raise_()
+        self._bottom_indicator.raise_()
+        self._scroll_timer.start()
+
+    def _on_drag_ended(self):
+        """Hide indicators when drag ends"""
+        self._scroll_timer.stop()
+        self._scroll_speed = 0
+        self._top_indicator.set_active(False)
+        self._bottom_indicator.set_active(False)
+        self._top_indicator.hide()
+        self._bottom_indicator.hide()
+
     def resizeEvent(self, event):
         """Reposition indicators on resize"""
         super().resizeEvent(event)
@@ -122,13 +178,6 @@ class AutoScrollArea(QScrollArea):
         """Accept drag and start auto-scroll detection"""
         if event.mimeData().hasText():
             event.acceptProposedAction()
-            self._scroll_timer.start()
-            self._update_indicator_positions()
-            # Show indicators
-            self._top_indicator.show()
-            self._bottom_indicator.show()
-            self._top_indicator.raise_()
-            self._bottom_indicator.raise_()
         else:
             event.ignore()
 
@@ -159,18 +208,14 @@ class AutoScrollArea(QScrollArea):
             event.ignore()
 
     def dragLeaveEvent(self, event):
-        """Stop auto-scroll when drag leaves"""
-        self._scroll_timer.stop()
+        """Pause auto-scroll when drag leaves scroll area but keep indicators visible"""
         self._scroll_speed = 0
-        self._top_indicator.hide()
-        self._bottom_indicator.hide()
+        self._top_indicator.set_active(False)
+        self._bottom_indicator.set_active(False)
 
     def dropEvent(self, event):
         """Stop auto-scroll on drop"""
-        self._scroll_timer.stop()
         self._scroll_speed = 0
-        self._top_indicator.hide()
-        self._bottom_indicator.hide()
         event.ignore()  # Let child widgets handle the drop
 
     def _do_auto_scroll(self):
@@ -443,7 +488,13 @@ class PhotoCard(QFrame):
             }}
         """)
 
+        # Notify drag manager that drag started
+        DragManager.instance().start_drag()
+
         drag.exec_(Qt.MoveAction)
+
+        # Notify drag manager that drag ended
+        DragManager.instance().end_drag()
 
         # Check if the widget was deleted during drag (happens when photo is moved)
         # This prevents RuntimeError: wrapped C/C++ object has been deleted
