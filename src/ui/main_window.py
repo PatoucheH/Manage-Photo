@@ -16,7 +16,7 @@ from ..models import PhotoItem
 from ..config import SUPPORTED_FORMATS
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
-from .widgets import PhotoCard, AutoScrollArea
+from .widgets import PhotoCard, AutoScrollArea, LoadMoreButton
 from .styles import Styles, Colors, SYSTEM_FONT
 
 # Number of photos to load at a time
@@ -376,9 +376,9 @@ class PhotoManagerApp(QMainWindow):
 
         container_layout.addWidget(self.grid_widget)
 
-        # Load more button
-        self.load_more_btn = QPushButton(tr("load_more"))
-        self.load_more_btn.setStyleSheet(f"""
+        # Load more button (supports drag hover to trigger)
+        self.load_more_btn = LoadMoreButton(tr("load_more"))
+        self.load_more_btn.set_base_style(f"""
             QPushButton {{
                 background: {Colors.BG_CARD};
                 color: {Colors.TEXT_PRIMARY};
@@ -397,6 +397,7 @@ class PhotoManagerApp(QMainWindow):
         self.load_more_btn.setCursor(Qt.PointingHandCursor)
         self.load_more_btn.setMinimumHeight(60)
         self.load_more_btn.clicked.connect(self._load_more)
+        self.load_more_btn.load_triggered.connect(self._load_more)  # Also trigger on drag hover
         self.load_more_btn.hide()  # Hidden by default
         container_layout.addWidget(self.load_more_btn)
 

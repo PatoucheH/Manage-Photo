@@ -225,6 +225,97 @@ class AutoScrollArea(QScrollArea):
             scrollbar.setValue(scrollbar.value() + self._scroll_speed)
 
 
+class LoadMoreButton(QPushButton):
+    """Button that can be triggered by hovering with a dragged photo"""
+
+    load_triggered = pyqtSignal()
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setAcceptDrops(True)
+
+        # Timer for hover-to-trigger
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._update_progress)
+        self._hold_time = 1000  # 1 second to trigger
+        self._elapsed = 0
+        self._progress = 0.0
+        self._is_drag_hover = False
+
+        # Store original style
+        self._base_style = ""
+
+    def set_base_style(self, style: str):
+        """Set the base style for the button"""
+        self._base_style = style
+        self.setStyleSheet(style)
+
+    def _update_progress(self):
+        """Update progress towards triggering load"""
+        self._elapsed += 50
+        self._progress = min(1.0, self._elapsed / self._hold_time)
+
+        # Update visual feedback
+        self._update_style()
+
+        if self._progress >= 1.0:
+            self._timer.stop()
+            self._reset_state()
+            self.load_triggered.emit()
+
+    def _update_style(self):
+        """Update button style based on progress"""
+        if self._is_drag_hover:
+            # Interpolate color based on progress
+            alpha = int(100 + 155 * self._progress)
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(99, 102, 241, {int(50 + 100 * self._progress)});
+                    color: white;
+                    border: 3px solid rgba(99, 102, 241, {alpha});
+                    border-radius: 12px;
+                    padding: 20px;
+                    font-size: 14px;
+                    font-weight: bold;
+                }}
+            """)
+        else:
+            self.setStyleSheet(self._base_style)
+
+    def _reset_state(self):
+        """Reset the hover state"""
+        self._timer.stop()
+        self._elapsed = 0
+        self._progress = 0.0
+        self._is_drag_hover = False
+        self.setStyleSheet(self._base_style)
+
+    def dragEnterEvent(self, event):
+        """Start progress timer when drag enters"""
+        if event.mimeData().hasText():
+            text = event.mimeData().text()
+            if text and text.isdigit():
+                event.acceptProposedAction()
+                self._is_drag_hover = True
+                self._elapsed = 0
+                self._progress = 0.0
+                self._timer.start()
+                self._update_style()
+                return
+        event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Stop timer when drag leaves"""
+        self._reset_state()
+
+    def dropEvent(self, event):
+        """Handle drop - trigger load immediately"""
+        self._reset_state()
+        self.load_triggered.emit()
+        event.ignore()  # Don't consume the drop
+
+
 class PhotoCard(QFrame):
     """Modern photo card with thumbnail and action buttons"""
 
