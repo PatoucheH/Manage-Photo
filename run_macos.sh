@@ -15,17 +15,19 @@ fi
 # Se placer dans le repertoire du script
 cd "$(dirname "$0")"
 
-# Supprimer ancien venv si besoin
-if [ -d "venv" ]; then
-    echo "Activation de l environnement virtuel..."
-    source venv/bin/activate
-else
+# Creer venv si necessaire
+if [ ! -d "venv" ]; then
     echo "Creation de l environnement virtuel..."
     python3 -m venv venv
-    source venv/bin/activate
+fi
 
+echo "Activation de l environnement virtuel..."
+source venv/bin/activate
+
+# Verifier et installer les dependances si manquantes
+if ! python3 -c "import PyQt5" 2>/dev/null; then
     echo "Installation des dependances..."
-    pip install -r requirements.txt
+    pip install --quiet -r requirements.txt
 fi
 
 echo
