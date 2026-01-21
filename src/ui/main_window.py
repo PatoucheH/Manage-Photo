@@ -235,6 +235,57 @@ class PhotoManagerApp(QMainWindow):
         radio_layout.addWidget(self.radio_9)
 
         layout.addWidget(radio_container)
+        layout.addSpacing(16)
+
+        # Separator
+        self._add_separator(layout)
+        layout.addSpacing(16)
+
+        # Image size section
+        self.size_section_label = QLabel(tr("image_size"))
+        self.size_section_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
+        self.size_section_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; letter-spacing: 1px;")
+        self.size_section_label.setMinimumHeight(20)
+        layout.addWidget(self.size_section_label)
+        layout.addSpacing(8)
+
+        self.size_group = QButtonGroup(self)
+        size_container = QFrame()
+        size_container.setMinimumHeight(110)
+        size_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        size_container.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BG_DARK};
+                border-radius: 10px;
+            }}
+        """)
+        size_layout = QVBoxLayout(size_container)
+        size_layout.setContentsMargins(16, 12, 16, 12)
+        size_layout.setSpacing(6)
+
+        self.radio_half = QRadioButton(tr("size_half_page"))
+        self.radio_half.setFont(QFont(SYSTEM_FONT, 13))
+        self.radio_half.setCursor(Qt.PointingHandCursor)
+        self.radio_half.setMinimumHeight(28)
+        self.size_group.addButton(self.radio_half, 1)  # 1 = half
+        size_layout.addWidget(self.radio_half)
+
+        self.radio_three_quarter = QRadioButton(tr("size_three_quarter_page"))
+        self.radio_three_quarter.setFont(QFont(SYSTEM_FONT, 13))
+        self.radio_three_quarter.setCursor(Qt.PointingHandCursor)
+        self.radio_three_quarter.setMinimumHeight(28)
+        self.size_group.addButton(self.radio_three_quarter, 2)  # 2 = three_quarter
+        size_layout.addWidget(self.radio_three_quarter)
+
+        self.radio_full = QRadioButton(tr("size_full_page"))
+        self.radio_full.setFont(QFont(SYSTEM_FONT, 13))
+        self.radio_full.setCursor(Qt.PointingHandCursor)
+        self.radio_full.setMinimumHeight(28)
+        self.radio_full.setChecked(True)  # Default: full page
+        self.size_group.addButton(self.radio_full, 3)  # 3 = full
+        size_layout.addWidget(self.radio_full)
+
+        layout.addWidget(size_container)
         layout.addSpacing(24)
 
         # Export button
@@ -440,6 +491,10 @@ class PhotoManagerApp(QMainWindow):
         self.radio_4.setText(tr("photos_layout_4"))
         self.radio_6.setText(tr("photos_layout_6"))
         self.radio_9.setText(tr("photos_layout_9"))
+        self.size_section_label.setText(tr("image_size"))
+        self.radio_half.setText(tr("size_half_page"))
+        self.radio_three_quarter.setText(tr("size_three_quarter_page"))
+        self.radio_full.setText(tr("size_full_page"))
         self.export_btn.setText(f"  {tr('export_word')}")
         self.clear_btn.setText(tr("clear_all"))
         self.footer_label.setText(tr("supported_formats"))
@@ -634,6 +689,11 @@ class PhotoManagerApp(QMainWindow):
 
         ppp = self.ppp_group.checkedId()
 
+        # Get image size option (1=half, 2=three_quarter, 3=full)
+        size_id = self.size_group.checkedId()
+        size_map = {1: 'half', 2: 'three_quarter', 3: 'full'}
+        image_size = size_map.get(size_id, 'full')
+
         # Progress dialog
         progress = QProgressDialog(tr("generating_word"), None, 0, 100, self)
         progress.setWindowModality(Qt.WindowModal)
@@ -653,7 +713,7 @@ class PhotoManagerApp(QMainWindow):
         progress.show()
 
         # Start export thread
-        self.export_thread = WordExporter(self.photos, path, ppp)
+        self.export_thread = WordExporter(self.photos, path, ppp, image_size)
         self.export_thread.progress.connect(progress.setValue)
         self.export_thread.finished.connect(lambda p: self._export_done(p, progress))
         self.export_thread.error.connect(lambda e: self._export_error(e, progress))

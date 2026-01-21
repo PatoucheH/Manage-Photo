@@ -21,3 +21,11 @@ class WordExportConfig:
         6: (2, 3),
         9: (3, 3)
     }
+
+    # Image size options (percentage of page)
+    # Full page is 95% max to ensure it never exceeds page bounds
+    IMAGE_SIZES = {
+        'half': 0.50,           # Demi page (50%)
+        'three_quarter': 0.75,  # 3/4 de page (75%)
+        'full': 0.95            # Page complète (95% max)
+    }

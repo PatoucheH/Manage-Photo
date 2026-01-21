@@ -57,6 +57,22 @@ class Translations:
             "en": "9 photos (3x3)",
             "fr": "9 photos (3x3)"
         },
+        "image_size": {
+            "en": "IMAGE SIZE",
+            "fr": "TAILLE DE L'IMAGE"
+        },
+        "size_half_page": {
+            "en": "Half page (50%)",
+            "fr": "Demi page (50%)"
+        },
+        "size_three_quarter_page": {
+            "en": "3/4 page (75%)",
+            "fr": "3/4 de page (75%)"
+        },
+        "size_full_page": {
+            "en": "Full page (95%)",
+            "fr": "Page complète (95%)"
+        },
         "export_word": {
             "en": "EXPORT TO WORD",
             "fr": "EXPORTER EN WORD"

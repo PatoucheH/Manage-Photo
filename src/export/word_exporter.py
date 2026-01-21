@@ -21,11 +21,12 @@ class WordExporter(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, photos: List[PhotoItem], path: str, photos_per_page: int):
+    def __init__(self, photos: List[PhotoItem], path: str, photos_per_page: int, image_size: str = 'full'):
         super().__init__()
         self.photos = photos
         self.path = path
         self.ppp = photos_per_page
+        self.image_size = image_size  # 'half', 'three_quarter', or 'full'
         self.config = WordExportConfig()
 
     def run(self) -> None:
@@ -55,10 +56,10 @@ class WordExporter(QThread):
         available_w_mm = 210 - (page_margin * 2)
         available_h_mm = 297 - (page_margin * 2)
 
-        # Reduce to ensure it fits
-        safe_factor = self.config.SAFE_FACTOR
-        page_w_mm = available_w_mm * safe_factor
-        page_h_mm = available_h_mm * safe_factor
+        # Get size factor based on selected image size option
+        size_factor = self.config.IMAGE_SIZES.get(self.image_size, 0.95)
+        page_w_mm = available_w_mm * size_factor
+        page_h_mm = available_h_mm * size_factor
 
         # Gap between photos
         gap_mm = self.config.GAP_MM
