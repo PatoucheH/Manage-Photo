@@ -56,9 +56,9 @@ class WordExporter(QThread):
         available_w_mm = 210 - (page_margin * 2)
         available_h_mm = 297 - (page_margin * 2)
 
-        # Get size factor based on selected image size option
+        # Get size factor based on selected image size option (affects height only)
         size_factor = self.config.IMAGE_SIZES.get(self.image_size, 0.95)
-        page_w_mm = available_w_mm * size_factor
+        page_w_mm = available_w_mm * 0.95  # Width always at max
         page_h_mm = available_h_mm * size_factor
 
         # Gap between photos

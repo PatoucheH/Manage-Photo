@@ -699,6 +699,8 @@ class PhotoManagerApp(QMainWindow):
         progress.setWindowModality(Qt.WindowModal)
         progress.setAutoClose(True)
         progress.setMinimumDuration(0)
+        progress.setMinimumWidth(400)
+        progress.setMinimumHeight(120)
         progress.setStyleSheet(f"""
             QProgressDialog {{
                 background: {Colors.BG_CARD};
@@ -706,8 +708,22 @@ class PhotoManagerApp(QMainWindow):
             }}
             QLabel {{
                 color: {Colors.TEXT_PRIMARY};
-                font-size: 14px;
-                padding: 16px;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 20px;
+            }}
+            QProgressBar {{
+                border: none;
+                border-radius: 10px;
+                background: {Colors.BG_DARK};
+                min-height: 24px;
+                max-height: 24px;
+                margin: 10px 20px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {Colors.PRIMARY}, stop:1 {Colors.SUCCESS});
+                border-radius: 10px;
             }}
         """)
         progress.show()

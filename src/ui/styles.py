@@ -191,16 +191,17 @@ class Styles:
 
             QProgressBar {{
                 border: none;
-                border-radius: 4px;
+                border-radius: 10px;
                 background: {Colors.BG_DARK};
-                height: 8px;
+                min-height: 20px;
+                max-height: 20px;
                 text-align: center;
             }}
 
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {Colors.PRIMARY}, stop:1 {Colors.SUCCESS});
-                border-radius: 4px;
+                border-radius: 10px;
             }}
 
             /* === FILE DIALOG === */
