@@ -38,7 +38,6 @@ class WordExporter(QThread):
     def _generate_word(self) -> None:
         doc = Document()
 
-        # Page margins
         page_margin = self.config.PAGE_MARGIN_MM
         for section in doc.sections:
             section.top_margin = Mm(page_margin)
@@ -52,20 +51,13 @@ class WordExporter(QThread):
         gap_mm = self.config.GAP_MM
         size_factor = self.config.IMAGE_SIZES.get(self.image_size, 1.0)
 
-        # Taille max d’une image
+        # Calcul de la largeur max d'une image
         cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols * size_factor
-        cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows * size_factor
 
-        # Composite size including margin = gap on all sides
-        composite_w_mm = cell_w_mm * cols + gap_mm * (cols + 1)
-        composite_h_mm = cell_h_mm * rows + gap_mm * (rows + 1)
-
+        # Conversion mm -> px
         mm_to_px = self.config.DPI / 25.4
         cell_w_px = int(cell_w_mm * mm_to_px)
-        cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
-        composite_w_px = int(composite_w_mm * mm_to_px)
-        composite_h_px = int(composite_h_mm * mm_to_px)
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -74,64 +66,58 @@ class WordExporter(QThread):
             if page_idx > 0:
                 doc.add_page_break()
 
-            # White background composite
-            composite = Image.new("RGB", (composite_w_px, composite_h_px), (255, 255, 255))
+            # Création composite
+            # On initialise un composite provisoire, taille suffisante (sera ajustée)
+            composite = Image.new("RGB", (int(available_w_mm * mm_to_px), int(available_h_mm * mm_to_px)), (255, 255, 255))
+
+            # Positionnement initial
             start = page_idx * self.ppp
+            y_cursor = gap_px  # début du premier rang
 
             for i in range(rows):
+                x_cursor = gap_px  # début de la première colonne
+                row_height = 0  # calcul dynamique de la hauteur du rang
+
                 for j in range(cols):
                     idx = start + i * cols + j
                     if idx >= total:
                         continue
 
-                    x = gap_px + j * (cell_w_px + gap_px)
-                    y = gap_px + i * (cell_h_px + gap_px)
+                    photo = self.photos[idx]
 
-                    self._place_photo(composite, self.photos[idx], x, y, cell_w_px, cell_h_px)
-                    self.progress.emit(int((idx + 1) / total * 100))
+                    with Image.open(photo.path) as img:
+                        if photo.rotation:
+                            img = img.rotate(-photo.rotation, expand=True)
+                        if img.mode != "RGB":
+                            img = img.convert("RGB")
 
-            self._insert_composite(doc, composite, composite_w_mm, composite_h_mm)
+                        img_w, img_h = img.size
+                        scale = min(cell_w_px / img_w, 1.0)  # on ne grossit pas
+                        new_w = int(img_w * scale)
+                        new_h = int(img_h * scale)
+
+                        img_resized = img.resize(new_w, new_h, Image.LANCZOS if hasattr(Image, "LANCZOS") else Image.ANTIALIAS)
+
+                        # paste avec centrage horizontal, top aligné verticalement
+                        offset_x = x_cursor + (cell_w_px - new_w) // 2
+                        offset_y = y_cursor
+                        composite.paste(img_resized, (offset_x, offset_y))
+
+                        x_cursor += cell_w_px + gap_px
+                        row_height = max(row_height, new_h)
+
+                y_cursor += row_height + gap_px  # le rang suivant commence juste après l'image la plus haute du rang
+
+            # Ajuster la taille finale du composite
+            final_w = min(composite.width, cols * cell_w_px + (cols + 1) * gap_px)
+            final_h = y_cursor
+            composite = composite.crop((0, 0, final_w, final_h))
+
+            self._insert_composite(doc, composite, final_w / mm_to_px, final_h / mm_to_px)
+
+            self.progress.emit(int((min((page_idx + 1) * self.ppp, total)) / total * 100))
 
         doc.save(self.path)
-
-    def _place_photo(
-        self,
-        composite: Image.Image,
-        photo: PhotoItem,
-        x: int,
-        y: int,
-        max_w: int,
-        max_h: int
-    ) -> None:
-        """Place a photo inside a cell (fit entirely, no crop, centered horizontally, top-aligned)"""
-        try:
-            with Image.open(photo.path) as img:
-                if photo.rotation:
-                    img = img.rotate(-photo.rotation, expand=True)
-
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-
-                img_w, img_h = img.size
-                scale = min(max_w / img_w, max_h / img_h)
-
-                new_w = int(img_w * scale)
-                new_h = int(img_h * scale)
-
-                img_resized = img.resize(
-                    (new_w, new_h),
-                    Image.LANCZOS if hasattr(Image, "LANCZOS") else Image.ANTIALIAS
-                )
-
-                # Horizontal centering
-                offset_x = x + (max_w - new_w) // 2
-                # Vertical: top-aligned
-                offset_y = y
-
-                composite.paste(img_resized, (offset_x, offset_y))
-
-        except Exception as e:
-            print(f"Error placing photo {photo.path}: {e}")
 
     def _insert_composite(
         self,
