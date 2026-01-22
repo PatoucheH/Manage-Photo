@@ -58,28 +58,17 @@ class WordExporter(QThread):
         # Gap between photos (FIXED, same horizontal and vertical)
         gap_mm = self.config.GAP_MM
 
-        # Calculate cell size (square or rectangular, but gap is fixed)
+        # Calculate cell width (fixed)
         cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
-        cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
 
         # Apply size factor to cells only (not to gaps)
         size_factor = self.config.IMAGE_SIZES.get(self.image_size, 1.0)
         cell_w_mm = cell_w_mm * size_factor
-        cell_h_mm = cell_h_mm * size_factor
-
-        # Total page size (cells + fixed gaps)
-        page_w_mm = cols * cell_w_mm + gap_mm * (cols - 1)
-        page_h_mm = rows * cell_h_mm + gap_mm * (rows - 1)
 
         # Convert mm to pixels
         mm_to_px = self.config.DPI / 25.4
         cell_w_px = int(cell_w_mm * mm_to_px)
-        cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
-
-        # Composite image size
-        composite_w_px = cols * cell_w_px + (cols - 1) * gap_px
-        composite_h_px = rows * cell_h_px + (rows - 1) * gap_px
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -88,31 +77,67 @@ class WordExporter(QThread):
             if page_idx > 0:
                 doc.add_page_break()
 
+            start = page_idx * self.ppp
+            end = min(start + self.ppp, total)
+            page_photos = self.photos[start:end]
+
+            # Calculate row heights based on tallest photo in each row
+            row_heights_px = []
+            for row_idx in range(rows):
+                row_start = row_idx * cols
+                row_end = min(row_start + cols, len(page_photos))
+                row_photos = page_photos[row_start:row_end]
+
+                if not row_photos:
+                    continue
+
+                # Find tallest photo in this row
+                max_h_px = 0
+                for photo in row_photos:
+                    try:
+                        with Image.open(photo.path) as img:
+                            img_w, img_h = img.size
+                            img_ratio = img_w / img_h
+                            new_w = cell_w_px
+                            new_h = int(new_w / img_ratio)
+                            max_h_px = max(max_h_px, new_h)
+                    except Exception as e:
+                        print(f"Error reading photo {photo.path}: {e}")
+
+                row_heights_px.append(max_h_px)
+
+            # Total composite height
+            composite_h_px = sum(row_heights_px) + gap_px * (len(row_heights_px) - 1)
+            composite_w_px = cols * cell_w_px + (cols - 1) * gap_px
+
             # Create composite image (white background)
             composite = Image.new('RGB', (composite_w_px, composite_h_px), (255, 255, 255))
 
-            start = page_idx * self.ppp
+            y_pos = 0
+            for row_idx in range(rows):
+                row_start = row_idx * cols
+                row_end = min(row_start + cols, len(page_photos))
+                row_photos = page_photos[row_start:row_end]
 
-            for i in range(rows):
-                for j in range(cols):
-                    idx = start + i * cols + j
-                    if idx >= total:
-                        continue
+                if not row_photos:
+                    continue
 
-                    photo = self.photos[idx]
+                row_h_px = row_heights_px[row_idx]
 
-                    # Cell position
-                    x = j * (cell_w_px + gap_px)
-                    y = i * (cell_h_px + gap_px)
+                for col_idx in range(len(row_photos)):
+                    photo = row_photos[col_idx]
+                    x = col_idx * (cell_w_px + gap_px)
 
-                    # Load and place the photo (FIT mode, centered, no crop)
-                    self._place_photo(composite, photo, x, y, cell_w_px, cell_h_px)
+                    # Place photo
+                    self._place_photo(composite, photo, x, y_pos, cell_w_px, row_h_px)
 
                     # Update progress
-                    self.progress.emit(int((idx + 1) / total * 100))
+                    self.progress.emit(int((start + row_start + col_idx + 1) / total * 100))
+
+                y_pos += row_h_px + gap_px
 
             # Insert composite image into document
-            self._insert_composite(doc, composite, page_w_mm, page_h_mm)
+            self._insert_composite(doc, composite, composite_w_px / mm_to_px, composite_h_px / mm_to_px)
 
         doc.save(self.path)
 
@@ -125,7 +150,7 @@ class WordExporter(QThread):
         cell_w: int,
         cell_h: int
     ) -> None:
-        """Place a photo in the composite image (FIT mode, centered, no crop)"""
+        """Place a photo in the composite image (FIT width, height auto, centered vertically)"""
         try:
             with Image.open(photo.path) as img:
                 # Apply rotation
@@ -146,26 +171,18 @@ class WordExporter(QThread):
                     else:
                         img = img.convert('RGB')
 
-                # FIT MODE: Resize to fit inside cell, keep ratio, no crop
+                # FIT width, height auto
                 img_w, img_h = img.size
                 img_ratio = img_w / img_h
-                cell_ratio = cell_w / cell_h
-
-                if img_ratio > cell_ratio:
-                    # Image is wider: fit to width
-                    new_w = cell_w
-                    new_h = int(cell_w / img_ratio)
-                else:
-                    # Image is taller: fit to height
-                    new_h = cell_h
-                    new_w = int(cell_h * img_ratio)
+                new_w = cell_w
+                new_h = int(new_w / img_ratio)
 
                 # Resize
                 resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
                 img_resized = img.resize((new_w, new_h), resample)
 
-                # Center in cell
-                paste_x = x + (cell_w - new_w) // 2
+                # Center vertically in cell
+                paste_x = x
                 paste_y = y + (cell_h - new_h) // 2
 
                 composite.paste(img_resized, (paste_x, paste_y))
