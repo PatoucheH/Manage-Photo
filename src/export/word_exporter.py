@@ -197,14 +197,21 @@ class WordExporter(QThread):
         width_mm: float,
         height_mm: float
     ) -> None:
-        """Insert the composite image into the document, centered on the page"""
+        """Insert the composite image into the document, centered both horizontally and vertically"""
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
+        # Page height (A4) minus margins
+        page_height_mm = 297 - (2 * self.config.PAGE_MARGIN_MM)
+        # Space to add before/after image to center vertically
+        space_before_after = (page_height_mm - height_mm) / 2
+
+        # Add a paragraph with space before to center vertically
         para = doc.add_paragraph()
+        para.paragraph_format.space_before = Mm(max(0, space_before_after))
+        para.paragraph_format.space_after = Mm(max(0, space_before_after))  # Espace après aussi
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_before = Mm(25) 
-        para.paragraph_format.space_after = Mm(0)
         para.add_run().add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
+
 
