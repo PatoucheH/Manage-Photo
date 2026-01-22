@@ -40,6 +40,13 @@ class WordExporter(QThread):
         """Generate the Word document"""
         doc = Document()
 
+        # Configure page margins to 0 for proper centering
+        for section in doc.sections:
+            section.top_margin = Mm(0)
+            section.bottom_margin = Mm(0)
+            section.left_margin = Mm(0)
+            section.right_margin = Mm(0)
+
         # Layout based on photos per page
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
 
