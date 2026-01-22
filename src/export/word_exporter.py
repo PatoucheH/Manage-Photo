@@ -56,17 +56,21 @@ class WordExporter(QThread):
         available_w_mm = 210 - (page_margin * 2)
         available_h_mm = 297 - (page_margin * 2)
 
-        # Get size factor based on selected image size option (affects height only)
-        size_factor = self.config.IMAGE_SIZES.get(self.image_size, 0.95)
-        page_w_mm = available_w_mm * 0.95  # Width always at max
-        page_h_mm = available_h_mm * size_factor
-
-        # Gap between photos
+        # Gap between photos (FIXED, same horizontal and vertical)
         gap_mm = self.config.GAP_MM
 
-        # Cell size
-        cell_w_mm = (page_w_mm - gap_mm * (cols - 1)) / cols
-        cell_h_mm = (page_h_mm - gap_mm * (rows - 1)) / rows
+        # Calculate cell size at full scale first
+        full_cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
+        full_cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
+
+        # Apply size factor to cells only (not to gaps)
+        size_factor = self.config.IMAGE_SIZES.get(self.image_size, 1.0)
+        cell_w_mm = full_cell_w_mm * size_factor
+        cell_h_mm = full_cell_h_mm * size_factor
+
+        # Total page size (cells + fixed gaps)
+        page_w_mm = cols * cell_w_mm + gap_mm * (cols - 1)
+        page_h_mm = rows * cell_h_mm + gap_mm * (rows - 1)
 
         # Convert mm to pixels
         mm_to_px = self.config.DPI / 25.4

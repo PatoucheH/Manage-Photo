@@ -10,8 +10,7 @@ THUMB_SIZE = (100, 100)
 class WordExportConfig:
     """Word export configuration"""
     PAGE_MARGIN_MM = 10  # Page margin in millimeters
-    GAP_MM = 2  # Gap between photos in millimeters
-    SAFE_FACTOR = 0.85  # Safety factor (85% of available space)
+    GAP_MM = 3  # Gap between photos in millimeters (same horizontal and vertical)
     DPI = 150  # Resolution for composite image
     JPEG_QUALITY = 95  # JPEG quality
 
@@ -22,10 +21,9 @@ class WordExportConfig:
         9: (3, 3)
     }
 
-    # Image size options (percentage of page)
-    # Full page is 95% max to ensure it never exceeds page bounds
+    # Image size options (percentage of cell size, gap stays fixed)
     IMAGE_SIZES = {
         'half': 0.50,           # Demi page (50%)
         'three_quarter': 0.75,  # 3/4 de page (75%)
-        'full': 0.95            # Page complète (95% max)
+        'full': 0.90            # Page complète (90% max pour ne jamais dépasser)
     }
