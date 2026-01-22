@@ -59,18 +59,14 @@ class WordExporter(QThread):
         # Gap between photos (FIXED, same horizontal and vertical)
         gap_mm = self.config.GAP_MM
 
-        # Calculate max cell size for each dimension
-        max_cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
-        max_cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
-
-        # Use SQUARE cells (same width and height) to ensure equal margins
-        # regardless of photo orientation (landscape or portrait)
-        cell_size_mm = min(max_cell_w_mm, max_cell_h_mm)
+        # Calculate cell size (rectangular for landscape photos)
+        cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
+        cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
 
         # Apply size factor to cells only (not to gaps)
         size_factor = self.config.IMAGE_SIZES.get(self.image_size, 1.0)
-        cell_w_mm = cell_size_mm * size_factor
-        cell_h_mm = cell_size_mm * size_factor
+        cell_w_mm = cell_w_mm * size_factor
+        cell_h_mm = cell_h_mm * size_factor
 
         # Total page size (cells + fixed gaps)
         page_w_mm = cols * cell_w_mm + gap_mm * (cols - 1)
@@ -130,7 +126,7 @@ class WordExporter(QThread):
         cell_w: int,
         cell_h: int
     ) -> None:
-        """Place a photo in the composite image (FIT mode, no crop)"""
+        """Place a photo in the composite image (FILL mode with crop)"""
         try:
             with Image.open(photo.path) as img:
                 # Apply rotation
@@ -151,29 +147,30 @@ class WordExporter(QThread):
                     else:
                         img = img.convert('RGB')
 
-                # FIT MODE: Adjust without cropping, maintain aspect ratio
+                # FILL MODE: Fill cell completely, crop if needed
                 img_w, img_h = img.size
                 img_ratio = img_w / img_h
                 cell_ratio = cell_w / cell_h
 
                 if img_ratio > cell_ratio:
-                    # Image is wider -> fit to width
-                    new_w = cell_w
-                    new_h = int(cell_w / img_ratio)
-                else:
-                    # Image is taller -> fit to height
+                    # Image is wider -> fit to height, crop width
                     new_h = cell_h
                     new_w = int(cell_h * img_ratio)
+                else:
+                    # Image is taller -> fit to width, crop height
+                    new_w = cell_w
+                    new_h = int(cell_w / img_ratio)
 
                 # Resize
                 resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
                 img_resized = img.resize((new_w, new_h), resample)
 
-                # Center in cell (with white space around)
-                offset_x = x + (cell_w - new_w) // 2
-                offset_y = y + (cell_h - new_h) // 2
+                # Crop to cell size (center crop)
+                crop_x = (new_w - cell_w) // 2
+                crop_y = (new_h - cell_h) // 2
+                img_cropped = img_resized.crop((crop_x, crop_y, crop_x + cell_w, crop_y + cell_h))
 
-                composite.paste(img_resized, (offset_x, offset_y))
+                composite.paste(img_cropped, (x, y))
 
         except Exception as e:
             print(f"Error placing photo {photo.path}: {e}")
