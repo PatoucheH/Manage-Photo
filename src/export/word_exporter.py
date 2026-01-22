@@ -197,13 +197,14 @@ class WordExporter(QThread):
         width_mm: float,
         height_mm: float
     ) -> None:
-        """Insert the composite image into the document"""
+        """Insert the composite image into the document, centered on the page"""
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_before = Mm(0)
+        para.paragraph_format.space_before = Mm(25) 
         para.paragraph_format.space_after = Mm(0)
         para.add_run().add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
+
