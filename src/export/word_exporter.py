@@ -202,8 +202,12 @@ class WordExporter(QThread):
         if new_page:
             doc.add_page_break()
 
+        # Calculate vertical offset to center the image on the page
+        page_h_mm = 297  # A4 height
+        vertical_offset = max(0, (page_h_mm - height_mm) / 2)
+
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_before = Mm(0)
+        para.paragraph_format.space_before = Mm(vertical_offset)
         para.paragraph_format.space_after = Mm(0)
         para.add_run().add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
