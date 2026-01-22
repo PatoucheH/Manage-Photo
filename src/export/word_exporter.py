@@ -231,8 +231,9 @@ class WordExporter(QThread):
         if tbl.tblPr is None:
             tbl.insert(0, tblPr)
 
-        # Get the cell and add the image
+        # Get the cell and set its width to match the image
         cell = table.cell(0, 0)
+        cell.width = Mm(width_mm)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
         # Center the paragraph inside the cell
