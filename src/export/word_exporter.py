@@ -59,7 +59,7 @@ class WordExporter(QThread):
         # Gap between photos (FIXED, same horizontal and vertical)
         gap_mm = self.config.GAP_MM
 
-        # Calculate cell size (rectangular for landscape photos)
+        # Calculate cell size
         cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
         cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
 
@@ -126,7 +126,7 @@ class WordExporter(QThread):
         cell_w: int,
         cell_h: int
     ) -> None:
-        """Place a photo in the composite image (FILL mode with crop)"""
+        """Place a photo in the composite image (FIT mode, no crop)"""
         try:
             with Image.open(photo.path) as img:
                 # Apply rotation
@@ -147,30 +147,21 @@ class WordExporter(QThread):
                     else:
                         img = img.convert('RGB')
 
-                # FILL MODE: Fill cell completely, crop if needed
+                # FIT MODE: keep full image, no crop
                 img_w, img_h = img.size
-                img_ratio = img_w / img_h
-                cell_ratio = cell_w / cell_h
+                scale = min(cell_w / img_w, cell_h / img_h)
 
-                if img_ratio > cell_ratio:
-                    # Image is wider -> fit to height, crop width
-                    new_h = cell_h
-                    new_w = int(cell_h * img_ratio)
-                else:
-                    # Image is taller -> fit to width, crop height
-                    new_w = cell_w
-                    new_h = int(cell_w / img_ratio)
+                new_w = int(img_w * scale)
+                new_h = int(img_h * scale)
 
-                # Resize
                 resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
                 img_resized = img.resize((new_w, new_h), resample)
 
-                # Crop to cell size (center crop)
-                crop_x = (new_w - cell_w) // 2
-                crop_y = (new_h - cell_h) // 2
-                img_cropped = img_resized.crop((crop_x, crop_y, crop_x + cell_w, crop_y + cell_h))
+                # Center image in cell
+                offset_x = x + (cell_w - new_w) // 2
+                offset_y = y + (cell_h - new_h) // 2
 
-                composite.paste(img_cropped, (x, y))
+                composite.paste(img_resized, (offset_x, offset_y))
 
         except Exception as e:
             print(f"Error placing photo {photo.path}: {e}")
