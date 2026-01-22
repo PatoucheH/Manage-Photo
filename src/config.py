@@ -9,8 +9,8 @@ THUMB_SIZE = (100, 100)
 
 class WordExportConfig:
     """Word export configuration"""
-    PAGE_MARGIN_MM = 10  # Page margin in millimeters
-    GAP_MM = 3  # Gap between photos in millimeters (same horizontal and vertical)
+    PAGE_MARGIN_MM = 0  # No page margin
+    GAP_MM = 0.3  # Gap between photos (~2px at 150 DPI)
     DPI = 150  # Resolution for composite image
     JPEG_QUALITY = 95  # JPEG quality
 
