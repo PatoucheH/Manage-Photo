@@ -202,15 +202,17 @@ class WordExporter(QThread):
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
-        # Add a paragraph with centered alignment
+        # A4 page dimensions
+        page_h_mm = 297
+
+        # Calculate vertical margin to center the composite
+        vertical_margin = (page_h_mm - height_mm) / 2
+
+        # Add a paragraph with centered alignment (horizontal)
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_before = Mm(0)
+        # Add space before to center vertically
+        para.paragraph_format.space_before = Mm(max(0, vertical_margin))
         para.paragraph_format.space_after = Mm(0)
         run = para.add_run()
         run.add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
-
-        # Center vertically by adding a page break and adjusting margins if needed
-        section = doc.sections[-1]
-        section.top_margin = Mm(self.config.PAGE_MARGIN_MM)
-        section.bottom_margin = Mm(self.config.PAGE_MARGIN_MM)
