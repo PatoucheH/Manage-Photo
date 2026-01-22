@@ -43,7 +43,7 @@ class WordExporter(QThread):
         # Layout based on photos per page
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
 
-        # Available area (A4 = 210x297mm, full page since margins are calculated per composite)
+        # Available area (A4 = 210x297mm)
         available_w_mm = 210
         available_h_mm = 297
 
@@ -187,37 +187,16 @@ class WordExporter(QThread):
         height_mm: float,
         new_page: bool = False
     ) -> None:
-        """Insert the composite image into the document, centered on the page"""
-        from docx.oxml.ns import qn
-        from docx.oxml import OxmlElement
-
+        """Insert the composite image into the document"""
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
-        # A4 page dimensions
-        page_h_mm = 297
-        page_w_mm = 210
-
-        # Calculate margins to center the composite
-        vertical_margin = max(0, (page_h_mm - height_mm) / 2)
-        horizontal_margin = max(0, (page_w_mm - width_mm) / 2)
-
         if new_page:
-            # Add a new section with page break
-            doc.add_section()
+            doc.add_page_break()
 
-        # Configure section margins for centering
-        section = doc.sections[-1]
-        section.top_margin = Mm(vertical_margin)
-        section.bottom_margin = Mm(vertical_margin)
-        section.left_margin = Mm(horizontal_margin)
-        section.right_margin = Mm(horizontal_margin)
-
-        # Add a paragraph with centered alignment (horizontal)
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         para.paragraph_format.space_before = Mm(0)
         para.paragraph_format.space_after = Mm(0)
-        run = para.add_run()
-        run.add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
+        para.add_run().add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
