@@ -40,20 +40,12 @@ class WordExporter(QThread):
         """Generate the Word document"""
         doc = Document()
 
-        # Configure page margins
-        page_margin = self.config.PAGE_MARGIN_MM
-        for section in doc.sections:
-            section.top_margin = Mm(page_margin)
-            section.bottom_margin = Mm(page_margin)
-            section.left_margin = Mm(page_margin)
-            section.right_margin = Mm(page_margin)
-
         # Layout based on photos per page
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
 
-        # Available area (A4 = 210x297mm)
-        available_w_mm = 210 - (page_margin * 2)
-        available_h_mm = 297 - (page_margin * 2)
+        # Available area (A4 = 210x297mm, full page since margins are calculated per composite)
+        available_w_mm = 210
+        available_h_mm = 297
 
         # Gap between photos (FIXED, same horizontal and vertical)
         gap_mm = self.config.GAP_MM
@@ -74,9 +66,6 @@ class WordExporter(QThread):
         num_pages = math.ceil(total / self.ppp)
 
         for page_idx in range(num_pages):
-            if page_idx > 0:
-                doc.add_page_break()
-
             start = page_idx * self.ppp
             end = min(start + self.ppp, total)
             page_photos = self.photos[start:end]
@@ -136,8 +125,8 @@ class WordExporter(QThread):
 
                 y_pos += row_h_px + gap_px
 
-            # Insert composite image into document, centered
-            self._insert_composite(doc, composite, composite_w_px / mm_to_px, composite_h_px / mm_to_px)
+            # Insert composite image into document, centered on its own page
+            self._insert_composite(doc, composite, composite_w_px / mm_to_px, composite_h_px / mm_to_px, page_idx > 0)
 
         doc.save(self.path)
 
@@ -195,24 +184,40 @@ class WordExporter(QThread):
         doc: Document,
         composite: Image.Image,
         width_mm: float,
-        height_mm: float
+        height_mm: float,
+        new_page: bool = False
     ) -> None:
         """Insert the composite image into the document, centered on the page"""
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
         # A4 page dimensions
         page_h_mm = 297
+        page_w_mm = 210
 
-        # Calculate vertical margin to center the composite
-        vertical_margin = (page_h_mm - height_mm) / 2
+        # Calculate margins to center the composite
+        vertical_margin = max(0, (page_h_mm - height_mm) / 2)
+        horizontal_margin = max(0, (page_w_mm - width_mm) / 2)
+
+        if new_page:
+            # Add a new section with page break
+            doc.add_section()
+
+        # Configure section margins for centering
+        section = doc.sections[-1]
+        section.top_margin = Mm(vertical_margin)
+        section.bottom_margin = Mm(vertical_margin)
+        section.left_margin = Mm(horizontal_margin)
+        section.right_margin = Mm(horizontal_margin)
 
         # Add a paragraph with centered alignment (horizontal)
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # Add space before to center vertically
-        para.paragraph_format.space_before = Mm(max(0, vertical_margin))
+        para.paragraph_format.space_before = Mm(0)
         para.paragraph_format.space_after = Mm(0)
         run = para.add_run()
         run.add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
