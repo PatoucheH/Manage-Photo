@@ -40,8 +40,12 @@ class WordExporter(QThread):
         """Generate the Word document"""
         doc = Document()
 
-        # Use default Word margins (approx 25mm) for better copy-paste compatibility
-        # The paragraph CENTER alignment will handle horizontal centering
+        # Configure page margins to 0 for proper centering
+        for section in doc.sections:
+            section.top_margin = Mm(0)
+            section.bottom_margin = Mm(0)
+            section.left_margin = Mm(0)
+            section.right_margin = Mm(0)
 
         # Layout based on photos per page
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
@@ -190,7 +194,11 @@ class WordExporter(QThread):
         height_mm: float,
         new_page: bool = False
     ) -> None:
-        """Insert the composite image into the document"""
+        """Insert the composite image into the document using a centered table"""
+        from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
         buf = io.BytesIO()
         composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
         buf.seek(0)
@@ -202,8 +210,34 @@ class WordExporter(QThread):
         page_h_mm = 297  # A4 height
         vertical_offset = max(0, (page_h_mm - height_mm) / 2)
 
-        para = doc.add_paragraph()
+        # Add spacing paragraph for vertical centering
+        spacing_para = doc.add_paragraph()
+        spacing_para.paragraph_format.space_before = Mm(vertical_offset)
+        spacing_para.paragraph_format.space_after = Mm(0)
+
+        # Create a table with one cell to hold the image (better copy-paste centering)
+        table = doc.add_table(rows=1, cols=1)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Remove table borders
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+        tblBorders = OxmlElement('w:tblBorders')
+        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'nil')
+            tblBorders.append(border)
+        tblPr.append(tblBorders)
+        if tbl.tblPr is None:
+            tbl.insert(0, tblPr)
+
+        # Get the cell and add the image
+        cell = table.cell(0, 0)
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+        # Center the paragraph inside the cell
+        para = cell.paragraphs[0]
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_before = Mm(vertical_offset)
+        para.paragraph_format.space_before = Mm(0)
         para.paragraph_format.space_after = Mm(0)
         para.add_run().add_picture(buf, width=Mm(width_mm), height=Mm(height_mm))
