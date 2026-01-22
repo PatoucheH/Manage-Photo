@@ -218,22 +218,31 @@ class WordExporter(QThread):
         # Create a table with one cell to hold the image (better copy-paste centering)
         table = doc.add_table(rows=1, cols=1)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
 
-        # Remove table borders
+        # Remove table borders and set table width
         tbl = table._tbl
         tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+
+        # Set table width to match image (in twips: 1mm = 56.7 twips)
+        tblW = OxmlElement('w:tblW')
+        tblW.set(qn('w:w'), str(int(width_mm * 56.7)))
+        tblW.set(qn('w:type'), 'dxa')
+        tblPr.append(tblW)
+
+        # Remove borders
         tblBorders = OxmlElement('w:tblBorders')
         for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
             border = OxmlElement(f'w:{border_name}')
             border.set(qn('w:val'), 'nil')
             tblBorders.append(border)
         tblPr.append(tblBorders)
+
         if tbl.tblPr is None:
             tbl.insert(0, tblPr)
 
-        # Get the cell and set its width to match the image
+        # Get the cell and add the image
         cell = table.cell(0, 0)
-        cell.width = Mm(width_mm)
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
         # Center the paragraph inside the cell
