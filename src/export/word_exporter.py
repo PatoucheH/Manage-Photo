@@ -2,7 +2,7 @@
 
 import io
 import math
-from typing import List, Callable, Optional
+from typing import List
 
 from PIL import Image
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -16,7 +16,6 @@ from ..config import WordExportConfig
 
 class WordExporter(QThread):
     """Thread for Word export"""
-
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
@@ -39,6 +38,7 @@ class WordExporter(QThread):
     def _generate_word(self) -> None:
         doc = Document()
 
+        # Page margins
         page_margin = self.config.PAGE_MARGIN_MM
         for section in doc.sections:
             section.top_margin = Mm(page_margin)
@@ -47,29 +47,25 @@ class WordExporter(QThread):
             section.right_margin = Mm(page_margin)
 
         cols, rows = self.config.LAYOUTS.get(self.ppp, (2, 3))
-
-        available_w_mm = 210 - (page_margin * 2)
-        available_h_mm = 297 - (page_margin * 2)
-
+        available_w_mm = 210 - page_margin * 2
+        available_h_mm = 297 - page_margin * 2
         gap_mm = self.config.GAP_MM
-
-        cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols
-        cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows
-
         size_factor = self.config.IMAGE_SIZES.get(self.image_size, 1.0)
-        cell_w_mm *= size_factor
-        cell_h_mm *= size_factor
 
-        page_w_mm = cols * cell_w_mm + gap_mm * (cols - 1)
-        page_h_mm = rows * cell_h_mm + gap_mm * (rows - 1)
+        # Taille max d’une image
+        cell_w_mm = (available_w_mm - gap_mm * (cols - 1)) / cols * size_factor
+        cell_h_mm = (available_h_mm - gap_mm * (rows - 1)) / rows * size_factor
+
+        # Composite size including margin = gap on all sides
+        composite_w_mm = cell_w_mm * cols + gap_mm * (cols + 1)
+        composite_h_mm = cell_h_mm * rows + gap_mm * (rows + 1)
 
         mm_to_px = self.config.DPI / 25.4
         cell_w_px = int(cell_w_mm * mm_to_px)
         cell_h_px = int(cell_h_mm * mm_to_px)
         gap_px = int(gap_mm * mm_to_px)
-
-        composite_w_px = cols * cell_w_px + (cols - 1) * gap_px
-        composite_h_px = rows * cell_h_px + (rows - 1) * gap_px
+        composite_w_px = int(composite_w_mm * mm_to_px)
+        composite_h_px = int(composite_h_mm * mm_to_px)
 
         total = len(self.photos)
         num_pages = math.ceil(total / self.ppp)
@@ -78,7 +74,8 @@ class WordExporter(QThread):
             if page_idx > 0:
                 doc.add_page_break()
 
-            composite = Image.new('RGB', (composite_w_px, composite_h_px), (255, 255, 255))
+            # White background composite
+            composite = Image.new("RGB", (composite_w_px, composite_h_px), (255, 255, 255))
             start = page_idx * self.ppp
 
             for i in range(rows):
@@ -87,21 +84,13 @@ class WordExporter(QThread):
                     if idx >= total:
                         continue
 
-                    x = j * (cell_w_px + gap_px)
-                    y = i * (cell_h_px + gap_px)
+                    x = gap_px + j * (cell_w_px + gap_px)
+                    y = gap_px + i * (cell_h_px + gap_px)
 
-                    self._place_photo(
-                        composite,
-                        self.photos[idx],
-                        x,
-                        y,
-                        cell_w_px,
-                        cell_h_px
-                    )
-
+                    self._place_photo(composite, self.photos[idx], x, y, cell_w_px, cell_h_px)
                     self.progress.emit(int((idx + 1) / total * 100))
 
-            self._insert_composite(doc, composite, page_w_mm, page_h_mm)
+            self._insert_composite(doc, composite, composite_w_mm, composite_h_mm)
 
         doc.save(self.path)
 
@@ -111,30 +100,32 @@ class WordExporter(QThread):
         photo: PhotoItem,
         x: int,
         y: int,
-        cell_w: int,
-        cell_h: int
+        max_w: int,
+        max_h: int
     ) -> None:
-        """Place a photo in the composite image (FIT, no crop, no extra vertical gap)"""
+        """Place a photo inside a cell (fit entirely, no crop, centered horizontally, top-aligned)"""
         try:
             with Image.open(photo.path) as img:
                 if photo.rotation:
                     img = img.rotate(-photo.rotation, expand=True)
 
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
 
                 img_w, img_h = img.size
-                scale = min(cell_w / img_w, cell_h / img_h)
+                scale = min(max_w / img_w, max_h / img_h)
 
                 new_w = int(img_w * scale)
                 new_h = int(img_h * scale)
 
-                resample = Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS
-                img_resized = img.resize((new_w, new_h), resample)
+                img_resized = img.resize(
+                    (new_w, new_h),
+                    Image.LANCZOS if hasattr(Image, "LANCZOS") else Image.ANTIALIAS
+                )
 
-                # Horizontal centering OK
-                offset_x = x + (cell_w - new_w) // 2
-                # Vertical alignment TOP → gap strictement respecté
+                # Horizontal centering
+                offset_x = x + (max_w - new_w) // 2
+                # Vertical: top-aligned
                 offset_y = y
 
                 composite.paste(img_resized, (offset_x, offset_y))
@@ -150,7 +141,7 @@ class WordExporter(QThread):
         height_mm: float
     ) -> None:
         buf = io.BytesIO()
-        composite.save(buf, format='JPEG', quality=self.config.JPEG_QUALITY)
+        composite.save(buf, format="JPEG", quality=self.config.JPEG_QUALITY)
         buf.seek(0)
 
         para = doc.add_paragraph()
