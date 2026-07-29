@@ -23,19 +23,21 @@ call build_env\Scripts\activate.bat
 
 echo.
 echo [2/4] Installation des dépendances...
-pip install --upgrade pip >nul 2>&1
-pip install pyinstaller customtkinter python-docx Pillow
+pip install --upgrade pip
+pip install pyinstaller PyQt5 python-docx Pillow
+
+echo.
+echo Nettoyage des anciens builds...
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
 
 echo.
 echo [3/4] Génération de l'exécutable Windows...
 echo       Cela peut prendre quelques minutes...
 echo.
 
-pyinstaller --noconfirm --onefile --windowed ^
+pyinstaller --noconfirm --clean --onefile --windowed ^
     --name "PhotoManager" ^
-    --add-data "build_env\Lib\site-packages\customtkinter;customtkinter" ^
-    --hidden-import "PIL._tkinter_finder" ^
-    --hidden-import "customtkinter" ^
     --hidden-import "docx" ^
     --hidden-import "docx.parts.image" ^
     --hidden-import "lxml.etree" ^
@@ -56,7 +58,6 @@ if exist "dist\PhotoManager.exe" (
     echo       double-cliquer dessus pour lancer l'application.
     echo.
 
-    REM Copier dans le dossier principal pour plus de visibilité
     copy "dist\PhotoManager.exe" "PhotoManager.exe" >nul 2>&1
     echo       Une copie a été placée dans le dossier actuel.
 ) else (

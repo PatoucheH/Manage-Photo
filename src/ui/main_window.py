@@ -16,7 +16,10 @@ from ..models import PhotoItem
 from ..config import SUPPORTED_FORMATS
 from ..export import WordExporter
 from ..i18n import Translations, Language, tr
-from .widgets import PhotoCard, AutoScrollArea, LoadMoreButton
+from .widgets import (
+    PhotoCard, AutoScrollArea, LoadMoreButton,
+    SelectionManager, SelectableContainer
+)
 from .styles import Styles, Colors, SYSTEM_FONT
 
 # Number of photos to load at a time
@@ -35,6 +38,10 @@ class PhotoManagerApp(QMainWindow):
         self.photos: List[PhotoItem] = []
         self._cards: List[PhotoCard] = []
         self._photos_displayed = 0  # Number of photos currently displayed
+
+        # Multi-selection state (for rubber-band selection & group moves)
+        self._selection = SelectionManager()
+        self._selection.changed.connect(self._sync_selection_visuals)
 
         # Apply theme
         self.setStyleSheet(Styles.get_main_stylesheet())
@@ -410,8 +417,10 @@ class PhotoManagerApp(QMainWindow):
             }}
         """)
 
-        # Container for grid + load more button
-        self.grid_container = QWidget()
+        # Container for grid + load more button (supports rubber-band selection)
+        self.grid_container = SelectableContainer()
+        self.grid_container.selection = self._selection
+        self.grid_container.cards_provider = lambda: self._cards
         self.grid_container.setStyleSheet(f"background-color: {Colors.BG_DARK};")
         container_layout = QVBoxLayout(self.grid_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -423,7 +432,7 @@ class PhotoManagerApp(QMainWindow):
         self.grid_layout = QGridLayout(self.grid_widget)
         self.grid_layout.setSpacing(16)
         self.grid_layout.setContentsMargins(8, 8, 8, 8)
-        self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
 
         container_layout.addWidget(self.grid_widget)
 
@@ -539,6 +548,7 @@ class PhotoManagerApp(QMainWindow):
 
         # Reset displayed count to show first batch
         self._photos_displayed = min(PHOTOS_BATCH_SIZE, len(self.photos))
+        self._selection.clear()
         self._update_view()
 
     def _delete_photo(self, index: int) -> None:
@@ -548,25 +558,36 @@ class PhotoManagerApp(QMainWindow):
             del self.photos[index]
             # Adjust displayed count
             self._photos_displayed = min(self._photos_displayed, len(self.photos))
+            self._selection.clear()
             self._update_view()
 
     def _rotate_photo(self, index: int) -> None:
         """Rotation callback"""
         pass
 
-    def _move_photo(self, from_index: int, to_index: int) -> None:
-        """Move a photo from one position to another"""
-        if from_index == to_index:
-            return
-        if not (0 <= from_index < len(self.photos) and 0 <= to_index < len(self.photos)):
+    def _move_photos(self, source_indices: List[int], to_index: int) -> None:
+        """Move one or several photos as a block to the target position."""
+        n = len(self.photos)
+        sources = sorted({i for i in source_indices if 0 <= i < n})
+        if not sources or not (0 <= to_index < n) or to_index in sources:
             return
 
-        # Remove photo from original position and insert at new position
-        photo = self.photos.pop(from_index)
-        self.photos.insert(to_index, photo)
+        target_photo = self.photos[to_index]
+        moved = [self.photos[i] for i in sources]
+        source_set = set(sources)
+        remaining = [p for i, p in enumerate(self.photos) if i not in source_set]
 
-        # Refresh the grid
+        # Insert the moved block just before the target photo's new position
+        insert_at = remaining.index(target_photo)
+        self.photos = remaining[:insert_at] + moved + remaining[insert_at:]
+
+        self._selection.clear()
         self._refresh_grid()
+
+    def _sync_selection_visuals(self) -> None:
+        """Update each visible card's highlight to match the selection."""
+        for card in self._cards:
+            card.set_selected(self._selection.is_selected(card.index))
 
     def _load_more(self) -> None:
         """Load more photos"""
@@ -592,6 +613,7 @@ class PhotoManagerApp(QMainWindow):
                 p.clear()
             self.photos.clear()
             self._photos_displayed = 0
+            self._selection.clear()
             self._update_view()
 
     def _update_view(self) -> None:
@@ -661,10 +683,13 @@ class PhotoManagerApp(QMainWindow):
             card = PhotoCard(
                 self.photos[i], i,
                 self._delete_photo, self._rotate_photo,
-                self._move_photo
+                self._move_photos, self._selection
             )
             self.grid_layout.addWidget(card, i // cols, i % cols)
             self._cards.append(card)
+
+        # Restore selection highlight on the freshly built cards
+        self._sync_selection_visuals()
 
         # Show/hide load more button
         if displayed < len(self.photos):

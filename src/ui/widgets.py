@@ -3,9 +3,10 @@
 from typing import Callable, Optional, List
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea
+    QGraphicsDropShadowEffect, QWidget, QApplication, QScrollArea,
+    QRubberBand
 )
-from PyQt5.QtCore import Qt, QPoint, QMimeData, pyqtSignal, QTimer, QObject
+from PyQt5.QtCore import Qt, QPoint, QRect, QSize, QMimeData, pyqtSignal, QTimer, QObject
 from PyQt5.QtGui import QFont, QColor, QDrag, QPixmap, QCursor, QPainter, QLinearGradient, QPolygon
 
 from ..models import PhotoItem
@@ -47,6 +48,115 @@ class DragManager(QObject):
 
     def is_dragging(self):
         return self._is_dragging
+
+
+class SelectionManager(QObject):
+    """Tracks which photo indices are currently selected."""
+
+    changed = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self._selected = set()
+
+    def selected(self):
+        """Return sorted list of selected indices."""
+        return sorted(self._selected)
+
+    def count(self):
+        return len(self._selected)
+
+    def is_selected(self, index: int) -> bool:
+        return index in self._selected
+
+    def clear(self):
+        if self._selected:
+            self._selected.clear()
+            self.changed.emit()
+
+    def set_selection(self, indices):
+        new = set(indices)
+        if new != self._selected:
+            self._selected = new
+            self.changed.emit()
+
+    def toggle(self, index: int):
+        if index in self._selected:
+            self._selected.discard(index)
+        else:
+            self._selected.add(index)
+        self.changed.emit()
+
+
+class SelectableContainer(QWidget):
+    """Container that supports rubber-band (click-drag rectangle) selection.
+
+    Clicking and dragging over empty space draws a selection rectangle and
+    selects every PhotoCard it touches, like selecting files in a folder.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rubber = QRubberBand(QRubberBand.Rectangle, self)
+        self._origin = None
+        self._base_selection = set()
+        self.cards_provider = None  # callable -> list[PhotoCard]
+        self.selection = None       # SelectionManager
+
+    def _card_under(self, widget):
+        """Walk up from widget to find an enclosing PhotoCard, if any."""
+        while widget is not None and widget is not self:
+            if isinstance(widget, PhotoCard):
+                return widget
+            widget = widget.parentWidget()
+        return None
+
+    def mousePressEvent(self, event):
+        if (event.button() == Qt.LeftButton and self.selection is not None
+                and self._card_under(self.childAt(event.pos())) is None):
+            # Starting a rubber-band selection on empty space
+            self._origin = event.pos()
+            self._rubber.setGeometry(QRect(self._origin, QSize()))
+            self._rubber.show()
+            if event.modifiers() & Qt.ControlModifier:
+                # Keep existing selection as a base to extend
+                self._base_selection = set(self.selection.selected())
+            else:
+                self._base_selection = set()
+                self.selection.clear()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._origin is not None:
+            rect = QRect(self._origin, event.pos()).normalized()
+            self._rubber.setGeometry(rect)
+            self._update_selection(rect)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._origin is not None:
+            self._rubber.hide()
+            self._origin = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _update_selection(self, rect: QRect):
+        if not self.cards_provider or self.selection is None:
+            return
+        hit = set(self._base_selection)
+        for card in self.cards_provider():
+            if sip.isdeleted(card):
+                continue
+            top_left = card.mapTo(self, QPoint(0, 0))
+            card_rect = QRect(top_left, card.size())
+            if rect.intersects(card_rect):
+                hit.add(card.index)
+        self.selection.set_selection(hit)
 
 
 class ScrollZoneIndicator(QWidget):
@@ -296,7 +406,7 @@ class LoadMoreButton(QPushButton):
         """Start progress timer when drag enters"""
         if event.mimeData().hasText():
             text = event.mimeData().text()
-            if text and text.isdigit():
+            if text and any(p.strip().isdigit() for p in text.split(",")):
                 event.acceptProposedAction()
                 self._is_drag_hover = True
                 self._elapsed = 0
@@ -329,7 +439,8 @@ class PhotoCard(QFrame):
         index: int,
         on_delete: Callable[[int], None],
         on_rotate: Callable[[int], None],
-        on_move: Optional[Callable[[int, int], None]] = None
+        on_move: Optional[Callable[[List[int], int], None]] = None,
+        selection: Optional["SelectionManager"] = None
     ):
         super().__init__()
         self.photo = photo
@@ -337,8 +448,12 @@ class PhotoCard(QFrame):
         self.on_delete = on_delete
         self.on_rotate = on_rotate
         self.on_move = on_move
+        self.selection = selection
+        self._selected = False
         self._hover = False
         self._drag_start_pos = None
+        self._dragged = False
+        self._suppress_release_click = False
 
         # Enable drag & drop
         self.setAcceptDrops(True)
@@ -353,16 +468,7 @@ class PhotoCard(QFrame):
         self.setCursor(Qt.OpenHandCursor)  # Indicate draggable
 
         # Base style
-        self.setStyleSheet(f"""
-            QFrame#photoCard {{
-                background: {Colors.BG_CARD};
-                border-radius: 14px;
-                border: 2px solid transparent;
-            }}
-            QFrame#photoCard:hover {{
-                border: 2px solid {Colors.PRIMARY};
-            }}
-        """)
+        self.setStyleSheet(self._card_stylesheet())
 
         # Shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -389,10 +495,14 @@ class PhotoCard(QFrame):
         img_layout = QVBoxLayout(img_container)
         img_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Let clicks on the image area fall through to the card (for drag/select)
+        img_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
         # Image label (no click - use button instead)
         self.img_label = QLabel()
         self.img_label.setFixedSize(164, 140)
         self.img_label.setAlignment(Qt.AlignCenter)
+        self.img_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.img_label.setStyleSheet(f"""
             QLabel {{
                 background: {Colors.BG_DARK};
@@ -481,6 +591,49 @@ class PhotoCard(QFrame):
         btn_container.addLayout(btn_row2)
         layout.addLayout(btn_container)
 
+    def _card_stylesheet(self, drop_target: bool = False) -> str:
+        """Build the card stylesheet based on selection / drop-target state."""
+        if drop_target:
+            border = f"2px solid {Colors.SUCCESS}"
+            hover = ""
+        elif self._selected:
+            border = f"3px solid {Colors.PRIMARY}"
+            hover = ""
+        else:
+            border = "2px solid transparent"
+            hover = f"QFrame#photoCard:hover {{ border: 2px solid {Colors.PRIMARY}; }}"
+        return (
+            f"QFrame#photoCard {{ background: {Colors.BG_CARD}; "
+            f"border-radius: 14px; border: {border}; }} {hover}"
+        )
+
+    def set_selected(self, value: bool) -> None:
+        """Update the selected state and refresh the visual."""
+        if self._selected != value:
+            self._selected = value
+            self.setStyleSheet(self._card_stylesheet())
+
+    def _add_count_badge(self, pixmap: QPixmap, count: int) -> QPixmap:
+        """Overlay a circular badge showing how many photos are being dragged."""
+        result = QPixmap(pixmap.size())
+        result.fill(Qt.transparent)
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.drawPixmap(0, 0, pixmap)
+
+        d = 26  # badge diameter
+        x = pixmap.width() - d - 3
+        y = 3
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(Colors.PRIMARY))
+        painter.drawEllipse(x, y, d, d)
+
+        painter.setPen(QColor("white"))
+        painter.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
+        painter.drawText(QRect(x, y, d, d), Qt.AlignCenter, str(count))
+        painter.end()
+        return result
+
     def _load_image(self) -> None:
         """Load the thumbnail"""
         pixmap = self.photo.get_pixmap()
@@ -534,15 +687,34 @@ class PhotoCard(QFrame):
             shadow.setColor(QColor(0, 0, 0, 50))
 
     def mousePressEvent(self, event) -> None:
-        """Start drag operation on left click"""
+        """Handle selection on click and prepare a possible drag."""
         if event.button() == Qt.LeftButton:
             self._drag_start_pos = event.pos()
+            self._dragged = False
+            self._suppress_release_click = False
             self.setCursor(Qt.ClosedHandCursor)  # Show grabbing cursor
+
+            if self.selection is not None:
+                if event.modifiers() & Qt.ControlModifier:
+                    # Ctrl+click toggles this card in/out of the selection
+                    self.selection.toggle(self.index)
+                    self._suppress_release_click = True
+                elif not self.selection.is_selected(self.index):
+                    # Clicking an unselected card selects just it
+                    self.selection.set_selection({self.index})
+                    self._suppress_release_click = True
+                # else: clicking an already-selected card keeps the group
+                #       (so a drag can move the whole selection)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        """Reset cursor on release"""
+        """Reset cursor on release; collapse selection on a plain click."""
         self.setCursor(Qt.OpenHandCursor)
+        if (event.button() == Qt.LeftButton and not self._dragged
+                and not self._suppress_release_click
+                and self.selection is not None):
+            # Plain click on an already-selected card -> select only it
+            self.selection.set_selection({self.index})
         self._drag_start_pos = None
         super().mouseReleaseEvent(event)
 
@@ -558,15 +730,32 @@ class PhotoCard(QFrame):
         if distance < QApplication.startDragDistance():
             return
 
+        self._dragged = True
+
+        # Determine which photos are being dragged. If this card is part of a
+        # multi-selection, drag the whole group; otherwise drag just this card.
+        if (self.selection is not None and self.selection.is_selected(self.index)
+                and self.selection.count() > 1):
+            indices = self.selection.selected()
+        else:
+            if self.selection is not None:
+                self.selection.set_selection({self.index})
+            indices = [self.index]
+
         # Start drag operation
         drag = QDrag(self)
         mime_data = QMimeData()
-        mime_data.setText(str(self.index))
+        mime_data.setText(",".join(str(i) for i in indices))
         drag.setMimeData(mime_data)
 
         # Create drag pixmap (thumbnail of the card)
         pixmap = self.grab()
         scaled_pixmap = pixmap.scaled(120, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        # If dragging multiple photos, stamp a count badge on the pixmap
+        if len(indices) > 1:
+            scaled_pixmap = self._add_count_badge(scaled_pixmap, len(indices))
+
         drag.setPixmap(scaled_pixmap)
         drag.setHotSpot(QPoint(scaled_pixmap.width() // 2, scaled_pixmap.height() // 2))
 
@@ -595,69 +784,43 @@ class PhotoCard(QFrame):
 
         # Restore style and cursor after drag
         self.setCursor(Qt.OpenHandCursor)
-        self.setStyleSheet(f"""
-            QFrame#photoCard {{
-                background: {Colors.BG_CARD};
-                border-radius: 14px;
-                border: 2px solid transparent;
-            }}
-            QFrame#photoCard:hover {{
-                border: 2px solid {Colors.PRIMARY};
-            }}
-        """)
+        self.setStyleSheet(self._card_stylesheet())
         self._drag_start_pos = None
 
+    @staticmethod
+    def _parse_indices(text: str) -> List[int]:
+        """Parse a comma-separated list of photo indices from mime text."""
+        if not text:
+            return []
+        result = []
+        for part in text.split(","):
+            part = part.strip()
+            if part.isdigit():
+                result.append(int(part))
+        return result
+
     def dragEnterEvent(self, event) -> None:
-        """Accept drag if it contains photo index"""
+        """Accept drag if it contains photo indices (and we're not a source)."""
         if event.mimeData().hasText():
-            text = event.mimeData().text()
-            # Check that text is not empty and is a valid integer
-            if text and text.isdigit():
-                source_index = int(text)
-                if source_index != self.index:
-                    event.acceptProposedAction()
-                    # Visual feedback - highlight drop target
-                    self.setStyleSheet(f"""
-                        QFrame#photoCard {{
-                            background: {Colors.BG_CARD};
-                            border-radius: 14px;
-                            border: 2px solid {Colors.SUCCESS};
-                        }}
-                    """)
-                    return
+            sources = self._parse_indices(event.mimeData().text())
+            if sources and self.index not in sources:
+                event.acceptProposedAction()
+                # Visual feedback - highlight drop target
+                self.setStyleSheet(self._card_stylesheet(drop_target=True))
+                return
         event.ignore()
 
     def dragLeaveEvent(self, event) -> None:
         """Reset style when drag leaves"""
-        self.setStyleSheet(f"""
-            QFrame#photoCard {{
-                background: {Colors.BG_CARD};
-                border-radius: 14px;
-                border: 2px solid transparent;
-            }}
-            QFrame#photoCard:hover {{
-                border: 2px solid {Colors.PRIMARY};
-            }}
-        """)
+        self.setStyleSheet(self._card_stylesheet())
 
     def dropEvent(self, event) -> None:
-        """Handle drop - move photo"""
+        """Handle drop - move one or several photos"""
         if event.mimeData().hasText():
-            text = event.mimeData().text()
-            if text and text.isdigit():
-                source_index = int(text)
-                if source_index != self.index and self.on_move:
-                    self.on_move(source_index, self.index)
-                event.acceptProposedAction()
+            sources = self._parse_indices(event.mimeData().text())
+            if sources and self.index not in sources and self.on_move:
+                self.on_move(sources, self.index)
+            event.acceptProposedAction()
 
         # Reset style
-        self.setStyleSheet(f"""
-            QFrame#photoCard {{
-                background: {Colors.BG_CARD};
-                border-radius: 14px;
-                border: 2px solid transparent;
-            }}
-            QFrame#photoCard:hover {{
-                border: 2px solid {Colors.PRIMARY};
-            }}
-        """)
+        self.setStyleSheet(self._card_stylesheet())
